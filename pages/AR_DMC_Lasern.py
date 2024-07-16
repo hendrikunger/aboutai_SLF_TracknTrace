@@ -22,11 +22,18 @@ with open("config.json", "r") as f:
     config = json.load(f)
 
 
+t1 = pn.Column(" # C1", "text")
+t2 = pn.Column(" # C2", "text")
+
+
+tabs = pn.Tabs(("Code anfordern",t1),
+               ("Beschriften", t2)
+              )
 
 pn.template.BootstrapTemplate(
     title=TITLE,
     sidebar=[linklist],
-    main=["# bound_plot"],
+    main=tabs,
     header_background=config["ACCENT"],
     theme=config["THEME"],
     logo=config["LOGO"],
