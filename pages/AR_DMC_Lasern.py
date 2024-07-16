@@ -1,12 +1,14 @@
 import panel as pn
 import json
 import csv
+import asyncio
+
 from datetime import datetime
 #panel serve pages/*.py --autoreload --port 80 --admin  --static-dirs assets=./assets
 
 TITLE = "AR DMC Lasern"
 
-pn.extension()
+pn.extension(notifications=True, loading_indicator=True)
 
 allIDs = []
 currentSerialID = pn.rx("Empty")
@@ -30,32 +32,64 @@ with open("config.json", "r") as f:
 with open("allIDs.csv", newline='') as csvfile:
     csvreader = csv.reader(csvfile)
     for row in csvreader:
+        if row == []: continue
         allIDs.append(row)
+
+def checkSerialID(index: int) -> str:
+    if index >= len(allIDs):
+        return "Alle IDs verarbeitet, bitte CSV aktualisieren und Seite neu laden"
+    else:
+        return str(allIDs[index - 1][0])
+
 
 with open("cur_sequence.json", "r") as f:
     sequence = json.load(f)
-    currentSerialindex = sequence["current"]
-    currentSerialID.rx.value = str(allIDs[currentSerialindex][0])
+    currentSerialindex = sequence["current"] + 1  #Otherwise we send the last ID two times
+    currentSerialID.rx.value = checkSerialID(currentSerialindex)
+
 
 def getSerialID():
     global currentSerialindex 
     print(f"getSerialID Index: {currentSerialindex}", flush=True)
-    currentSerialindex = currentSerialindex + 1
-    return str(allIDs[currentSerialindex-1][0])
+
+    if currentSerialindex >= len(allIDs):
+        return "Alle IDs verarbeitet, bitte CSV aktualisieren und Seite neu laden"
+    else:
+        currentSerialindex = currentSerialindex + 1
+        return str(allIDs[currentSerialindex-1][0])
 
 
-def sendtoLaser():
-    print("send to Laser")
+
+async def laser_tcp_ip_communication(id: str):
+    reader, writer = await asyncio.open_connection('127.0.0.1', 3000)
+    print(f"send to Laser: {id}", flush=True)
+    message = 'Hello, World!'
+    print(f'Sending: {message} - for ID: {id}')
+    writer.write(message.encode())
+
+    data = await reader.read(100)
+    print(f'Received: {data.decode()}')
+
+    writer.close()
+    await writer.wait_closed()
 
 
-def button_function(event):
+
+async def button_function(event):
     global currentSerialindex
-    print("Button clicked", flush=True)
-    sendtoLaser()
-    currentSerialID.rx.value = getSerialID()
+    #disable button
+    b_Start.disabled = True
+    running_indicator.value = running_indicator.visible = True
+    await laser_tcp_ip_communication(currentSerialID.rx.value)
+    running_indicator.value = running_indicator.visible = False
+    b_Start.disabled = False
+    #Save the Serial ID which has been lasered
     with open("cur_sequence.json", "w") as f:
         sequence["current"] = currentSerialindex
         json.dump(sequence, f)
+    #Get next Serial ID
+    currentSerialID.rx.value = getSerialID()
+
     
 
 
@@ -68,10 +102,14 @@ b_Start.rx.watch(button_function)
 md_currentSerialID = pn.pane.Markdown(text_currentSerialID)
 serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")), width=250, hide_header=True)
 
+running_indicator = pn.indicators.LoadingSpinner(
+    value=False, height=100, width=100, color="secondary", visible=False, margin=50)
+
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCard, pn.Spacer(sizing_mode="stretch_width")),
-                   b_Start)
+                   b_Start,
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),)
 
 
 pn.template.BootstrapTemplate(
@@ -84,3 +122,5 @@ pn.template.BootstrapTemplate(
     collapsed_sidebar=config["SIDEBAR_OFF"],
     sidebar_width = 200,
 ).servable()
+
+
