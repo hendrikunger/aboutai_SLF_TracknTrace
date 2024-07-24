@@ -1,0 +1,4 @@
+psycopg2
+pyalchemy
+panel
+watchfiles

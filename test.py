@@ -1,62 +1,127 @@
+#%%
+from sqlalchemy import create_engine, select
+from sqlalchemy import text, MetaData, Table, Column, Integer, String, ForeignKey
+from sqlalchemy.orm import Session, DeclarativeBase, Mapped, mapped_column, relationship
+from typing import List, Optional
+
+
+#%%
+#engine = create_engine("sqlite+pysqlite:///:memory:", echo=True)
+
+engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
 # %%
-import hvplot.pandas
-import numpy as np
-import pandas as pd
-import panel as pn
 
-PRIMARY_COLOR = "#0072B5"
-SECONDARY_COLOR = "#B54300"
-CSV_FILE = (
-    "https://raw.githubusercontent.com/holoviz/panel/main/examples/assets/occupancy.csv"
-)
-
-pn.extension(design="material", sizing_mode="stretch_width")
-
-# %%
-@pn.cache
-def get_data():
-  return pd.read_csv(CSV_FILE, parse_dates=["date"], index_col="date")
-
-data = get_data()
-
-data.tail()
+with engine.begin() as conn:
+    conn.execute(text("Create Table some_table (x int, y int)"))
+    conn.execute(text("Insert Into some_table (x, y) Values (:x, :y)"),
+                      [{"x": 1, "y": 1}, {"x": 2, "y": 4}]
+                )
 
 # %%
-def transform_data(variable, window, sigma):
-    """Calculates the rolling average and identifies outliers"""
-    avg = data[variable].rolling(window=window).mean()
-    residual = data[variable] - avg
-    std = residual.rolling(window=window).std()
-    outliers = np.abs(residual) > std * sigma
-    return avg, avg[outliers]
-
-
-def get_plot(variable="Temperature", window=30, sigma=10):
-    """Plots the rolling average and the outliers"""
-    avg, highlight = transform_data(variable, window, sigma)
-    return avg.hvplot(
-        height=300, legend=False, color=PRIMARY_COLOR
-    ) * highlight.hvplot.scatter(color=SECONDARY_COLOR, padding=0.1, legend=False)
-
+b=2
+with Session(engine) as session:
+    result = session.execute(text("SELECT x, y FROM some_table WHERE y > :z"), {"z": b})
+    for row in result:
+        print(f"x: {row.x}  y: {row.y}")
 # %%
-variable_widget = pn.widgets.Select(name="variable", value="Temperature", options=list(data.columns))
-window_widget = pn.widgets.IntSlider(name="window", value=30, start=1, end=60)
-sigma_widget = pn.widgets.IntSlider(name="sigma", value=10, start=0, end=20)
+metadata_obj = MetaData()
 
-bound_plot = pn.bind(
-    get_plot, variable=variable_widget, window=window_widget, sigma=sigma_widget
+user_table = Table(
+    "user_account",
+    metadata_obj,
+    Column("id", Integer, primary_key=True),
+    Column("name", String(30)),
+    Column("fullname", String),
 )
 # %%
-widgets = pn.Column(variable_widget, window_widget, sigma_widget, sizing_mode="fixed", width=300)
-pn.Column(widgets, bound_plot)
+address_table = Table(
+    "address",
+    metadata_obj,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", ForeignKey("user_account.id"), nullable=False),
+    Column("email_address", String, nullable=False),
+)
+# %%
+metadata_obj.create_all(engine)
+# %%
+metadata_obj.drop_all(engine)
 # %%
 
-pn.template.BootstrapTemplate(
-    site="Panel",
-    title="Getting Started App",
-    sidebar=[variable_widget, window_widget, sigma_widget],
-    main=[bound_plot],
-).servable()
+class Base(DeclarativeBase):
+    pass
 
 
+
+class User(Base):
+    __tablename__ = "user_account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(30))
+    fullname: Mapped[Optional[str]]
+    addresses: Mapped[List["Address"]] = relationship(back_populates="user")
+    def __repr__(self) -> str:
+        return f"User(id={self.id!r}, name={self.name!r}, fullname={self.fullname!r})"
+
+class Address(Base):
+    __tablename__ = "address"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email_address: Mapped[str]
+    user_id = mapped_column(ForeignKey("user_account.id"))
+    user: Mapped[User] = relationship(back_populates="addresses")
+    def __repr__(self) -> str:
+        return f"Address(id={self.id!r}, email_address={self.email_address!r})"
+    
+# %%
+Base.metadata.create_all(engine)
+# %%
+session = Session(engine)
+# %%
+squidward = User(name="Suidward", fullname="Squidward Tentacles")
+krabs = User(name="Krabs", fullname="Eugene Krabs")
+squidward
+# %%
+session.add(squidward)
+session.add(krabs)
+
+
+# %%
+session.commit()
+# %%
+krabs2 = session.execute(select(User).where(User.name == "Krabs")).scalar_one()
+# %%
+session.delete(krabs2)
+session.flush()
+#%%
+krabs2 in session
+
+#%%
+session.execute(select(User).where(User.name == "Suidward")).first()
+
+
+# %%
+session.close()
+
+#%%
+squidward.name = "Klaus2"
+# %%
+squidward
+# %%
+
+
+# %%
+squidward.addresses.extend(
+    [
+        Address(email_address="jkkBNJ"),
+        Address(email_address="jkkBNJ2"),
+    ])
+
+# %%
+squidward.addresses
+
+# %%
+squidward.addresses
+
+# %%
+with Session(engine) as session:
+    squidward = session.execute(select(User).where(User.name == "Klaus2")).scalar_one()
+    print(squidward.addresses)
  

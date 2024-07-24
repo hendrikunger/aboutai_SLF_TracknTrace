@@ -2,11 +2,26 @@ import panel as pn
 import json
 import csv
 import asyncio
+import os
+import sys
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
-from datetime import datetime
+main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+if main_project_dir not in sys.path:
+    sys.path.append(main_project_dir)
+
+
+from db.models import User, Address
+
 #panel serve pages/*.py --autoreload --port 80 --admin  --static-dirs assets=./assets
 
+
+
 TITLE = "AR DMC Lasern"
+
+engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
 
 pn.extension(notifications=True, loading_indicator=True)
 
@@ -90,7 +105,13 @@ async def button_function(event):
     #Get next Serial ID
     currentSerialID.rx.value = getSerialID()
 
-    
+
+def button_function_test(event):
+    print("Test",flush=True)
+    with Session(engine) as session:
+        result = session.execute(select(User))
+        for row in result:
+            print(row,flush=True)
 
 
 text_currentSerialID = pn.rx("# {currentSerialID}").format(currentSerialID=currentSerialID)
@@ -98,6 +119,9 @@ text_currentSerialID = pn.rx("# {currentSerialID}").format(currentSerialID=curre
 
 b_Start = pn.widgets.Button(name='Seriennummer zum Laser übertragen', button_type='primary', height=80, sizing_mode="stretch_width")
 b_Start.rx.watch(button_function)
+
+b_Test = pn.widgets.Button(name='Test', button_type='primary', height=80, sizing_mode="stretch_width")
+b_Test.on_click(button_function_test)
 
 md_currentSerialID = pn.pane.Markdown(text_currentSerialID)
 serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")), width=250, hide_header=True)
@@ -114,7 +138,7 @@ column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdow
 
 pn.template.BootstrapTemplate(
     title=TITLE,
-    sidebar=[linklist],
+    sidebar=[linklist, b_Test],
     main=column,
     header_background=config["ACCENT"],
     theme=config["THEME"],
