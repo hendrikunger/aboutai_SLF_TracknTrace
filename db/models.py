@@ -1,6 +1,6 @@
 
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import  Integer, String, ForeignKey
+from sqlalchemy import  Integer, String, ForeignKey, Double
 from typing import List, Optional
 
 
@@ -9,20 +9,23 @@ class Base(DeclarativeBase):
     pass
 
 
-class User(Base):
-    __tablename__ = "user_account"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(30))
-    fullname: Mapped[Optional[str]]
-    addresses: Mapped[List["Address"]] = relationship(back_populates="user")
-    def __repr__(self) -> str:
-        return f"User(id={self.id!r}, name={self.name!r}, fullname={self.fullname!r})"
 
-class Address(Base):
-    __tablename__ = "address"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    email_address: Mapped[str]
-    user_id = mapped_column(ForeignKey("user_account.id"))
-    user: Mapped[User] = relationship(back_populates="addresses")
+class BearingData(Base):
+    __tablename__ = "bearingdata"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    ueberstand: Mapped[float] = mapped_column(Double, nullable=True)
+    breite: Mapped[float] = mapped_column(Double, nullable=True)
+    aussenR: Mapped[int] = mapped_column(Integer, nullable=True)
+    innenR: Mapped[int] = mapped_column(Integer, nullable=True)
+    rueckmeldenummer: Mapped[int] = mapped_column(Integer, nullable=True)
+
+
+
     def __repr__(self) -> str:
-        return f"Address(id={self.id!r}, email_address={self.email_address!r})"
+        return f"Lager(id={self.id!r}, ueberstand={self.ueberstand!r}, breite={self.breite!r}, aussenR={self.aussenR!r}, innenR_={self.innenR!r}, rueckmeldenummer={self.rueckmeldenummer!r})"
+    
+
+if __name__ == "__main__":
+    from sqlalchemy import create_engine
+    engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
+    Base.metadata.create_all(engine)

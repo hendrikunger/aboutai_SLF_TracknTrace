@@ -4,8 +4,9 @@ import csv
 import asyncio
 import os
 import sys
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -13,7 +14,7 @@ if main_project_dir not in sys.path:
     sys.path.append(main_project_dir)
 
 
-from db.models import User, Address
+from db.models import BearingData
 
 #panel serve pages/*.py --autoreload --port 80 --admin  --static-dirs assets=./assets
 
@@ -21,9 +22,10 @@ from db.models import User, Address
 
 TITLE = "AR DMC Lasern"
 
-engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
 
-pn.extension(notifications=True, loading_indicator=True)
+pn.extension(notifications=True)
+pn.state.notifications.position = 'top-right'
+engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
 
 allIDs = []
 currentSerialID = pn.rx("Empty")
@@ -104,26 +106,31 @@ async def button_function(event):
         json.dump(sequence, f)
     #Get next Serial ID
     currentSerialID.rx.value = getSerialID()
+    write_to_DB(currentSerialID.rx.value)
 
 
-def button_function_test(event):
-    print("Test",flush=True)
-    with Session(engine) as session:
-        result = session.execute(select(User))
-        for row in result:
-            print(row,flush=True)
+def write_to_DB(bearing_id):
+    session = Session(engine)
+    try:
+        newEntry = BearingData(id=bearing_id)
+        session.add(newEntry)
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        pn.state.notifications.error(f'f"DMC schon in der Datenbank: {existing}"', duration=2000)
+    else:
+        session.commit()
+    session.close()
+  
 
 
-text_currentSerialID = pn.rx("# {currentSerialID}").format(currentSerialID=currentSerialID)
+text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=currentSerialID)
 
 
 b_Start = pn.widgets.Button(name='Seriennummer zum Laser übertragen', button_type='primary', height=80, sizing_mode="stretch_width")
 b_Start.rx.watch(button_function)
 
-b_Test = pn.widgets.Button(name='Test', button_type='primary', height=80, sizing_mode="stretch_width")
-b_Test.on_click(button_function_test)
-
-md_currentSerialID = pn.pane.Markdown(text_currentSerialID)
+md_currentSerialID = pn.pane.Markdown(text_currentSerialID, width=250, styles={'text-align': 'center', 'font-size': '24px'})
 serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")), width=250, hide_header=True)
 
 running_indicator = pn.indicators.LoadingSpinner(
@@ -138,7 +145,7 @@ column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdow
 
 pn.template.BootstrapTemplate(
     title=TITLE,
-    sidebar=[linklist, b_Test],
+    sidebar=[linklist],
     main=column,
     header_background=config["ACCENT"],
     theme=config["THEME"],

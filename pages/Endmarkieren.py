@@ -15,7 +15,7 @@ if main_project_dir not in sys.path:
 from components import FocusedInput
 from db.models import BearingData
 
-TITLE = "Ringe verpaaren"
+TITLE = "Endmarkieren"
 
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
@@ -39,13 +39,12 @@ with open("config.json", "r") as f:
 
 
 
-def write_to_DB(bearing_id, aussenR, innenR):
+def write_to_DB(bearing_id, measurement):
     session = Session(engine)
     try:
         EntrytoUpdate = session.get_one(BearingData, bearing_id)
         print(F"Updating: {EntrytoUpdate}", flush=True)
-        EntrytoUpdate.aussenR = aussenR
-        EntrytoUpdate.innenR = innenR
+        EntrytoUpdate.ueberstand = measurement
         session.flush()
     except NoResultFound:
         session.rollback()
@@ -68,19 +67,21 @@ def process(event):
     getMeasurement(None)
     running_indicator.value = running_indicator.visible = False
     ti_Barcode.focus = False
+    b_Reload.disabled = False
     b_Save.disabled = False
 
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
-    write_to_DB(ti_Barcode.value, ar_group.value, ir_group.value)
+    write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
+    b_Reload.disabled = True
     ti_Barcode.focus = True
     currentMeasurement.rx.value = ""
 
 
 
-b_Save = pn.widgets.Button(name='Auswahl speichern',
+b_Save = pn.widgets.Button(name='Messung speichern',
                            button_type='primary',
                            height=80,
                            sizing_mode="stretch_width",
@@ -88,25 +89,14 @@ b_Save = pn.widgets.Button(name='Auswahl speichern',
 b_Save.rx.watch(button_save_function)
 
 
-ar_group = pn.widgets.RadioButtonGroup(
-    name='Radio Button Group',
-    options=[1, 2, 3, 4, 5, 6, 7, 8, 9],
-    button_type='primary',
-    button_style="outline",
-     height=80,
-    align="center",
-    width=600,
-    margin=20)
+b_Reload = pn.widgets.ButtonIcon(icon="refresh", 
+                                 active_icon="refresh-dot",
+                                 toggle_duration=1000,
+                                 disabled=True,
+                                 height=80,
+                                 )
+b_Reload.on_click(getMeasurement)
 
-ir_group  = pn.widgets.RadioButtonGroup(
-    name="Innenring",
-    options=[1, 2, 3, 4, 5, 6, 7, 8, 9],
-    button_type='primary',
-    button_style="outline",
-    height=80,
-    align="center",
-    width=600,
-    margin=20)
 
 ti_Barcode = FocusedInput(name="Barcode", value="",)
 ti_Barcode.param.watch(process, "value")
@@ -123,7 +113,15 @@ serialCardID = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"),
                                         height=80,
                                         hide_header=True)
 
-
+text_currentMeasurement = pn.rx("{currentMeasurement}").format(currentMeasurement=currentMeasurement)
+md_currentMeasurement = pn.pane.Markdown(text_currentMeasurement,
+                                         width=250,
+                                         styles={'text-align': 'center',
+                                         'font-size': '24px'})
+serialCardMeasurement = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentMeasurement, pn.Spacer(sizing_mode="stretch_width")),
+                                       width=250,
+                                       height=80,
+                                       hide_header=True)
    
 
 running_indicator = pn.indicators.LoadingSpinner(value=False,
@@ -136,10 +134,8 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardID, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Außenring Gruppe:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),ar_group, pn.Spacer(sizing_mode="stretch_width")),
-                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Innenring Gruppe:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),ir_group, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Messwert:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardMeasurement, pn.Row(b_Reload, pn.Spacer(sizing_mode="stretch_width"))),
                    pn.Spacer(sizing_mode="stretch_width", height=100),
                    b_Save,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),
