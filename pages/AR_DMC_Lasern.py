@@ -22,10 +22,13 @@ from db.models import BearingData
 
 TITLE = "AR DMC Lasern"
 
+with open("config.json", "r") as f:
+    config = json.load(f)
+
 
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
 
 allIDs = []
 currentSerialID = pn.rx("Empty")
@@ -42,8 +45,6 @@ linklist = pn.pane.Markdown(
     sizing_mode="stretch_width",
 )
 
-with open("config.json", "r") as f:
-    config = json.load(f)
 
 
 with open("allIDs.csv", newline='') as csvfile:

@@ -17,9 +17,13 @@ from db.models import BearingData
 
 TITLE = "Breite messen"
 
+with open("config.json", "r") as f:
+    config = json.load(f)
+
+
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
 
 currentMeasurement = pn.rx("")
 
@@ -33,10 +37,6 @@ linklist = pn.pane.Markdown(
     "\n".join([f"## [{key}]({value})" for key,value in links.items()]),
     sizing_mode="stretch_width",
 )
-
-with open("config.json", "r") as f:
-    config = json.load(f)
-
 
 
 def write_to_DB(bearing_id, measurement):
@@ -59,6 +59,7 @@ def getMeasurement(event):
 
 
 def process(event):
+    if event.new == "": return
     if not event.new.isdigit():
         pn.state.notifications.error('DMC ist keine Zahl', duration=2000)
         ti_Barcode.value = ""
@@ -134,7 +135,7 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardID, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Messwert:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktueller Messwert:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardMeasurement, pn.Row(b_Reload, pn.Spacer(sizing_mode="stretch_width"))),
                    pn.Spacer(sizing_mode="stretch_width", height=100),
                    b_Save,

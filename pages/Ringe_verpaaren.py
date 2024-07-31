@@ -17,9 +17,13 @@ from db.models import BearingData
 
 TITLE = "Ringe verpaaren"
 
+with open("config.json", "r") as f:
+    config = json.load(f)
+
+
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
 
 currentMeasurement = pn.rx("")
 
@@ -33,9 +37,6 @@ linklist = pn.pane.Markdown(
     "\n".join([f"## [{key}]({value})" for key,value in links.items()]),
     sizing_mode="stretch_width",
 )
-
-with open("config.json", "r") as f:
-    config = json.load(f)
 
 
 
@@ -60,6 +61,7 @@ def getMeasurement(event):
 
 
 def process(event):
+    if event.new == "": return
     if not event.new.isdigit():
         pn.state.notifications.error('DMC ist keine Zahl', duration=2000)
         ti_Barcode.value = ""
