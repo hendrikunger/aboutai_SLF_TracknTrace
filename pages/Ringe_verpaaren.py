@@ -202,18 +202,6 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
                                                  margin=50)
 
 
-def testfunction(event):
-    print("Test", flush=True)
-    df = pd.DataFrame({"SerialID": ["222","3333"]})
-    tabulator_widget.value = df
-    
-
-
-b_test = pn.widgets.Button(name='Test', button_type='primary', height=80, sizing_mode="stretch_width")
-b_test.on_click(lambda event: testfunction(event))
-
-
-
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), tabulator_widget, pn.Spacer(sizing_mode="stretch_width")),
@@ -230,7 +218,7 @@ column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdow
 
 pn.template.BootstrapTemplate(
     title=TITLE,
-    sidebar=[linklist, b_test],
+    sidebar=[linklist],
     main=column,
     header_background=config["ACCENT"],
     theme=config["THEME"],
