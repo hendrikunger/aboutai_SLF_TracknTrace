@@ -3,7 +3,6 @@ import os
 import sys
 import asyncio
 import panel as pn
-import random
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
@@ -51,7 +50,7 @@ def read_DB(bearing_id):
         EntrytoReturn = session.get_one(BearingData, bearing_id)
     except NoResultFound:
         session.rollback()
-        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=2000)
+        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
 
     ueberstand.rx.value = EntrytoReturn.ueberstand
     breite.rx.value = EntrytoReturn.breite
@@ -59,6 +58,7 @@ def read_DB(bearing_id):
     innenR.rx.value = EntrytoReturn.innenR
     
     session.close()
+    return
 
 
 

@@ -84,8 +84,9 @@ async def laser_tcp_ip_communication(id: str):
     message = 'Hello, World!'
     print(f'Sending: {message} - for ID: {id}')
     writer.write(message.encode())
-
-    data = await reader.read(100)
+    await writer.drain()
+    line = await reader.readline()
+    data = line.decode('utf8').rstrip()
     print(f'Received: {data.decode()}')
 
     writer.close()
@@ -118,10 +119,11 @@ def write_to_DB(bearing_id):
         session.flush()
     except IntegrityError:
         session.rollback()
-        pn.state.notifications.error(f'f"DMC schon in der Datenbank: {existing}"', duration=2000)
+        pn.state.notifications.error(f'f"DMC schon in der Datenbank:', duration=0)
     else:
         session.commit()
     session.close()
+    return
   
 
 

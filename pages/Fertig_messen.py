@@ -4,13 +4,10 @@ import sys
 import panel as pn
 import random
 import asyncio
-import time
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound, DataError
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from threading import Thread, Event
+from watchfiles import awatch
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -19,53 +16,6 @@ if main_project_dir not in sys.path:
 
 from components import FocusedInput
 from db.models import BearingData
-
-class FileWatcher:
-    def __init__(self, filename, directory="."):
-        self.filename = filename
-        self.directory = directory
-        self.observer = None
-        self.thread = None
-        self.file_created_event = Event()
-        self.event_handler = FileCreatedHandler(self.filename, self.file_created)
-
-    def start_watching(self):
-        if not self.observer:
-            self.observer = Observer()
-            self.observer.schedule(self.event_handler, path=self.directory, recursive=False)
-            self.thread = Thread(target=self._run_observer)
-            self.thread.start()
-            print(f"Started watching for {self.filename} in {self.directory}", flush=True)
-
-    def stop_watching(self):
-        if self.observer:
-            self.observer.stop()
-            self.observer.join()
-            self.observer = None
-            self.thread = None
-            print(f"Stopped watching for {self.filename}", flush=True)
-
-    def _run_observer(self):
-        self.observer.start()
-        self.file_created_event.wait()
-        self.observer.stop()
-        self.observer.join()
-
-    def file_created(self, path):
-        print(f"File {path} has been created!", flush=True)
-        self.file_created_event.set()  # Signal that the file has been created
-
-class FileCreatedHandler(FileSystemEventHandler):
-    def __init__(self, filename, callback):
-        self.filename = filename
-        self.callback = callback
-
-    def on_created(self, event):
-        if event.src_path.endswith(self.filename):
-            self.callback(event.src_path)
-
-watcher = FileWatcher("test.csv", directory=".")  
-
 
 
 
@@ -102,28 +52,35 @@ def write_to_DB(bearing_id, measurement):
         session.flush()
     except NoResultFound:
         session.rollback()
-        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=2000)
+        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
     except DataError:
         session.rollback()
         pn.state.notifications.error(f'Messwert ist keine Zahl', duration=2000)
     else:
         session.commit()
     session.close()
+    return
 
+
+async def watch_for_file(filepath):
+    async for changes in awatch(os.path.dirname(filepath), recursive=False):
+        for change_type, path in changes:
+            print(f'change_type: {change_type}, path: {path}', flush=True)
+            if (change_type == 1 or change_type== 2) and path.endswith(os.path.basename(filepath)):
+                await getMeasurement(filepath)
+                return
 
 
 async def getMeasurement(event):
     #watch for test.csv file and read the first line after it is created
-    if not os.path.exists("test.csv"):
-        watcher.start_watching()
-        watcher.file_created_event.wait()
-        watcher.stop_watching()
-        
-    with open("test.csv", "r") as f:
-        f.readline()
-        line = f.readline()
-        currentMeasurement.rx.value = line.split(";")[1]
-    os.remove("test.csv")
+    if os.path.exists("test.csv"):        
+        with open("test.csv", "r") as f:
+            f.readline()
+            line = f.readline()
+            currentMeasurement.rx.value = line.split(";")[1]
+        os.remove("test.csv")
+    else:
+        pn.state.notifications.error('test.csv nicht gefunden', duration=2000)
 
 async def createTestData(event):
     #write csv test file with one line of fake data
@@ -134,19 +91,21 @@ async def createTestData(event):
 
 
 async def process(event):
-    if event.new == "": return
-    if not event.new.isdigit():
+    input_value = str(ti_Barcode.value)
+    if input_value == "": return
+    if not input_value.isdigit():
         pn.state.notifications.error('DMC ist keine Zahl', duration=2000)
         ti_Barcode.value = ""
         return   
     running_indicator.value = running_indicator.visible = True
     running_indicator.name = "Warte auf Messwert csv Datei"
-    await getMeasurement(None)
+    await watch_for_file("test.csv")
     running_indicator.value = running_indicator.visible = False
     running_indicator.name = ""
     ti_Barcode.focus = False
     b_Reload.disabled = False
     b_Save.disabled = False
+    return
 
 def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
@@ -159,7 +118,7 @@ def button_save_function(event):
 
 
 b_test = pn.widgets.Button(name='Test', button_type='primary', height=80, sizing_mode="stretch_width")
-b_test.on_click(lambda event: asyncio.create_task(createTestData()))
+b_test.on_click(lambda event: asyncio.create_task(createTestData(event)))
 
 
 b_Save = pn.widgets.Button(name='Messung speichern',
@@ -176,11 +135,11 @@ b_Reload = pn.widgets.ButtonIcon(icon="refresh",
                                  disabled=True,
                                  height=80,
                                  )
-b_Reload.on_click(getMeasurement)
+b_Reload.on_click(lambda event: asyncio.create_task(process(event)))
 
 
 ti_Barcode = FocusedInput(name="Barcode", value="",)
-ti_Barcode.param.watch(process, "value")
+ti_Barcode.param.watch(lambda event: asyncio.create_task(process(event)), "value")
 
 text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=ti_Barcode.param.value)
 md_currentSerialID = pn.pane.Markdown(text_currentSerialID,

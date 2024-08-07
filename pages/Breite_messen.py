@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import asyncio
 import panel as pn
 import random
 from sqlalchemy import create_engine
@@ -48,27 +49,40 @@ def write_to_DB(bearing_id, measurement):
         session.flush()
     except NoResultFound:
         session.rollback()
-        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=2000)
+        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
     else:
         session.commit()
     session.close()
+    return
 
-def getMeasurement(event):
-    currentMeasurement.rx.value =  random.randint(0, 100)
+async def getMeasurement():
+    reader, writer = await asyncio.open_connection('127.0.0.1', 3000)
+    print(f"Waiting for measurement", flush=True)
+    
+    line = await reader.readline()
+    data = line.decode('utf8').rstrip()
+    measurement = data.split(":")[1]
+    print(f'Received: {data}', flush=True)
+    print(f'Measurement: {measurement}', flush=True)
+
+    writer.close()
+    await writer.wait_closed()
+    currentMeasurement.rx.value =  measurement
+    return
 
 
-
-def process(event):
+async def process(event):
     if event.new == "": return
     if not event.new.isdigit():
         pn.state.notifications.error('DMC ist keine Zahl', duration=2000)
         ti_Barcode.value = ""
         return   
     running_indicator.value = running_indicator.visible = True
-    getMeasurement(None)
+    running_indicator.name = "Warte auf Messgerät"
+    await getMeasurement()
     running_indicator.value = running_indicator.visible = False
+    running_indicator.name = ""
     ti_Barcode.focus = False
-    b_Reload.disabled = False
     b_Save.disabled = False
 
 async def button_save_function(event):
@@ -76,7 +90,6 @@ async def button_save_function(event):
     write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
-    b_Reload.disabled = True
     ti_Barcode.focus = True
     currentMeasurement.rx.value = ""
 
@@ -90,13 +103,6 @@ b_Save = pn.widgets.Button(name='Messung speichern',
 b_Save.rx.watch(button_save_function)
 
 
-b_Reload = pn.widgets.ButtonIcon(icon="refresh", 
-                                 active_icon="refresh-dot",
-                                 toggle_duration=1000,
-                                 disabled=True,
-                                 height=80,
-                                 )
-b_Reload.on_click(getMeasurement)
 
 
 ti_Barcode = FocusedInput(name="Barcode", value="",)
@@ -136,7 +142,7 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardID, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktueller Messwert:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardMeasurement, pn.Row(b_Reload, pn.Spacer(sizing_mode="stretch_width"))),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardMeasurement, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Spacer(sizing_mode="stretch_width", height=100),
                    b_Save,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),

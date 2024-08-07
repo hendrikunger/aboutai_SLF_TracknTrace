@@ -49,14 +49,14 @@ def write_to_DB(bearing_id, measurement):
         session.flush()
     except NoResultFound:
         session.rollback()
-        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=2000)
+        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
     else:
         session.commit()
     session.close()
+    return
 
 def getMeasurement(event):
     currentMeasurement.rx.value =  random.randint(0, 100)
-
 
 
 def process(event):

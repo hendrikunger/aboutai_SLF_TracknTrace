@@ -2,10 +2,12 @@ import json
 import os
 import sys
 import panel as pn
-import random
+import pandas as pd
+import asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
+from sqlalchemy import update
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -21,12 +23,14 @@ with open("config.json", "r") as f:
     config = json.load(f)
 
 
-pn.extension(notifications=True)
+pn.extension('tabulator', notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config['DATABASE']}", echo=True)
 
-currentMeasurement = pn.rx("")
+if "currentSerialIDs" not in pn.state.cache:
+    pn.state.cache["currentSerialIDs"] =  pn.rx([""])
 
+currentSerialIDs = pn.state.cache["currentSerialIDs"]
 
 #read links from json file
 with open("links.json", "r") as f:
@@ -40,47 +44,88 @@ linklist = pn.pane.Markdown(
 
 
 
-def write_to_DB(bearing_id, aussenR, innenR):
+async def write_to_DB(bearing_ids, aussenR, innenR):
     session = Session(engine)
-    try:
-        EntrytoUpdate = session.get_one(BearingData, bearing_id)
-        print(F"Updating: {EntrytoUpdate}", flush=True)
-        EntrytoUpdate.aussenR = aussenR
-        EntrytoUpdate.innenR = innenR
-        session.flush()
-    except NoResultFound:
-        session.rollback()
-        pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=2000)
-    else:
-        session.commit()
+    for bearing_id in bearing_ids:
+        try:
+            EntrytoUpdate = session.get_one(BearingData, bearing_id)
+            print(F"Updating: {EntrytoUpdate}", flush=True)
+            EntrytoUpdate.aussenR = aussenR
+            EntrytoUpdate.innenR = innenR
+            session.flush()
+        except NoResultFound:
+            session.rollback()
+            pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
+        else:
+            session.commit()
     session.close()
-
-def getMeasurement(event):
-    currentMeasurement.rx.value =  random.randint(0, 100)
+    return
 
 
+def update_currentSerialIDs(event):
+    currentSerialIDs.rx.value = [event.new]
 
-def process(event):
-    if event.new == "": return
-    if not event.new.isdigit():
-        pn.state.notifications.error('DMC ist keine Zahl', duration=2000)
-        ti_Barcode.value = ""
-        return   
-    running_indicator.value = running_indicator.visible = True
-    getMeasurement(None)
-    running_indicator.value = running_indicator.visible = False
+def onCurrentSerialIDsChange(newIDs):
+    print(f"New IDs: {newIDs}", flush=True)
+    #if len(newIDs) == 0: return
+    for dmc in newIDs:
+        print(f"DMC: {dmc}", flush=True)
+        if not dmc.isdigit():
+            pn.state.notifications.error(f'DMC {dmc} ist keine Zahl', duration=2000)
+            print(f"DMC {dmc} is not a number", flush=True)
+            return
+
+    df = pd.DataFrame({"SerialID": newIDs})
+    tabulator_widget.value = df
     ti_Barcode.focus = False
     b_Save.disabled = False
 
 async def button_save_function(event):
-    running_indicator.value = running_indicator.visible = True
-    write_to_DB(ti_Barcode.value, ar_group.value, ir_group.value)
-    running_indicator.value = running_indicator.visible = False
+    running_indicator.value = True
+    running_indicator.visible = True
+    await write_to_DB(currentSerialIDs.rx.value, ar_group.value, ir_group.value)
+    running_indicator.value = False
+    running_indicator.visible = False
     b_Save.disabled = True
     ti_Barcode.focus = True
-    currentMeasurement.rx.value = ""
 
 
+# Define an asynchronous function to handle TCP/IP communication
+async def tcp_ip_client():
+    currentSerialIDs = pn.state.cache["currentSerialIDs"]
+    while True:
+        #callback =  pn.state.add_periodic_callback(lambda: setattr(currentSerialIDs.rx, 'value', data), period=200)
+
+        reader, writer = await asyncio.open_connection('localhost', 3000)
+        while True:
+                line = await reader.readline()
+                if not line:
+                    break
+                data = line.decode('utf8').rstrip()
+                print(f'Received: {data}', flush=True)
+                #data = data.replace(",", "\n")
+                data = data.split(",")
+                data = [d.split(":")[1] for d in data]
+                data = [d for d in data if d.isdigit()]
+                callback =  pn.state.add_periodic_callback(lambda: setattr(currentSerialIDs.rx, 'value', data), period=200, count=1)
+            
+                await asyncio.sleep(0.1)
+
+        if writer:
+            writer.close()
+            await writer.wait_closed()
+        if callback:
+            await callback.stop()
+        # Wait before attempting to reconnect
+        print("Reconnecting in 10 seconds...", flush=True)
+        await asyncio.sleep(10)
+
+# Function to start the asyncio event loop
+async def run_asyncio():
+    await tcp_ip_client()
+
+
+    
 
 b_Save = pn.widgets.Button(name='Auswahl speichern',
                            button_type='primary',
@@ -110,20 +155,41 @@ ir_group  = pn.widgets.RadioButtonGroup(
     width=600,
     margin=20)
 
-ti_Barcode = FocusedInput(name="Barcode", value="",)
-ti_Barcode.param.watch(process, "value")
 
-text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=ti_Barcode.param.value)
-md_currentSerialID = pn.pane.Markdown(text_currentSerialID,
-                                      width=250,
-                                      styles={'text-align': 'center',
-                                      'font-size': '24px'})
-serialCardID = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"),
-                                        md_currentSerialID,
-                                        pn.Spacer(sizing_mode="stretch_width")),
-                                        width=250,
-                                        height=80,
-                                        hide_header=True)
+
+ti_Barcode = FocusedInput(name="Barcode", value="",)
+ti_Barcode.param.watch(update_currentSerialIDs, "value")
+
+
+currentSerialIDs.rx.watch(onCurrentSerialIDsChange, "value")
+
+
+# md_currentSerialIDs = pn.pane.Markdown(currentSerialIDs,
+#                                       width=250,
+#                                       styles={'text-align': 'center',
+#                                       'font-size': '24px'})
+
+df = pd.DataFrame({"SerialID": ["34534534","33345"]})
+tabulator_options = {
+    "headerVisible": False
+}
+
+custom_css = """
+.tabulator-cell, .tabulator-header {
+    font-size: 20px; /* Change this value to your desired text size */
+}
+"""
+
+pn.config.raw_css.append(custom_css)
+tabulator_widget = pn.widgets.Tabulator(df, width=400, show_index=False, theme="site", widths={"SerialID": 400},configuration=tabulator_options)
+
+# serialCardID = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"),
+#                                         md_currentSerialIDs,
+#                                         pn.Spacer(sizing_mode="stretch_width")),
+#                                         width=250,
+#                                         height=80,
+#                                         hide_header=True)
+
 
 
    
@@ -136,11 +202,24 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
                                                  margin=50)
 
 
+def testfunction(event):
+    print("Test", flush=True)
+    df = pd.DataFrame({"SerialID": ["222","3333"]})
+    tabulator_widget.value = df
+    
+
+
+b_test = pn.widgets.Button(name='Test', button_type='primary', height=80, sizing_mode="stretch_width")
+b_test.on_click(lambda event: testfunction(event))
+
+
+
+
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardID, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), tabulator_widget, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Außenring Gruppe:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),ar_group, pn.Spacer(sizing_mode="stretch_width")),
-                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Innenring Gruppe:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Innenring Gruppe:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),ir_group, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Spacer(sizing_mode="stretch_width", height=100),
                    b_Save,
@@ -151,7 +230,7 @@ column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdow
 
 pn.template.BootstrapTemplate(
     title=TITLE,
-    sidebar=[linklist],
+    sidebar=[linklist, b_test],
     main=column,
     header_background=config["ACCENT"],
     theme=config["THEME"],
@@ -159,3 +238,11 @@ pn.template.BootstrapTemplate(
     collapsed_sidebar=config["SIDEBAR_OFF"],
     sidebar_width = 200,
 ).servable()
+
+
+#Ensure the asyncio event loop runs in the background
+if not hasattr(pn.state, 'asyncio_task'):
+    loop = asyncio.get_event_loop()
+    pn.state.asyncio_task = loop.create_task(run_asyncio())
+    print("Asyncio task started.", flush=True)
+
