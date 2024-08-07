@@ -7,7 +7,7 @@ import asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
-from sqlalchemy import update
+
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
