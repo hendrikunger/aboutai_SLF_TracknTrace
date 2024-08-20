@@ -99,7 +99,7 @@ async def button_function(event):
     #disable button
     b_Start.disabled = True
     running_indicator.value = running_indicator.visible = True
-    await laser_tcp_ip_communication(currentSerialID.rx.value)
+    #await laser_tcp_ip_communication(currentSerialID.rx.value)
     running_indicator.value = running_indicator.visible = False
     b_Start.disabled = False
     #Save the Serial ID which has been lasered
@@ -119,7 +119,7 @@ def write_to_DB(bearing_id):
         session.flush()
     except IntegrityError:
         session.rollback()
-        pn.state.notifications.error(f'f"DMC schon in der Datenbank:', duration=0)
+        pn.state.notifications.error(f'DMC schon in der Datenbank:', duration=0)
     else:
         session.commit()
     session.close()

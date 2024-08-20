@@ -74,12 +74,8 @@ def process(event):
     ti_Barcode.focus = False
     b_Save.disabled = False
 
-async def laser_tcp_ip_communication():
-    reader, writer = await asyncio.open_connection('127.0.0.1', 3000)
-    print(f"send to Laser: {ti_Barcode.value}, {ueberstand.rx.value}, {breite.rx.value}, {aussenR.rx.value}, {innenR.rx.value}", flush=True)
-    
-    #Set Variables
-    message = f'SETVARS:DMC;{ti_Barcode.value};ueberstand;{ueberstand.rx.value};breite;{breite.rx.value};ARUR;{aussenR.rx.value}/{innenR.rx.value}\r\n'
+
+async def doTCP_Transaction(reader, writer, message):
     print(f'Sending:\n{message}', flush=True)
     writer.write(message.encode())
     await writer.drain()
@@ -89,27 +85,31 @@ async def laser_tcp_ip_communication():
     print(f'Received: {data}', flush=True)
     print(f'Returncode: {returncode}', flush=True)
     if returncode != "1":
-        pn.state.notifications.error(f'Laser Variablen setzen Fehlermeldung mit Fehlercode {returncode}', duration=5000)
+        pn.state.notifications.error(f'TCP IP Laser Fehler mit Fehlercode {returncode}', duration=5000)
         ti_Barcode.value = ""
         return
 
-    #Start Job
-    # message = f'STARTJOB\r\n'
-    # print(f'Sending:\n{message}', flush=True)
-    # writer.write(message.encode())
-    # await writer.drain()
-    # line = await reader.readline()
-    # data = line.decode('utf8').rstrip()
-    # returncode = data.split(":")[1]
-    # print(f'Received: {data}', flush=True)
-    # print(f'Returncode: {returncode}', flush=True)
 
-    # if returncode == "1":
-    #     pn.state.notifications.success('Laser Job gestartet', duration=2000)
-    # else:
-    #     pn.state.notifications.error(f'Laser Start Fehlermeldung mit Fehlercode {returncode}', duration=5000)
-    #     ti_Barcode.value = ""
-        return
+async def laser_tcp_ip_communication():
+    reader, writer = await asyncio.open_connection('10.0.0.2', 3000)
+    print(f"send to Laser: {ti_Barcode.value}, {ueberstand.rx.value}, {breite.rx.value}, {aussenR.rx.value}, {innenR.rx.value}", flush=True)
+    
+    ##TODO prüfen 0b Job schon geladen ist, der Laser will nicht, dass der Job ständig nachgeladen wird (GetJobName)
+
+    #Load Job Variables
+    message = f'LOADJOB:TEST FOBA\r\n'
+    doTCP_Transaction(reader,writer, message)
+
+
+    #Set Variables
+    message = f'SETVARS:DMC;{ti_Barcode.value};ueberstand;{ueberstand.rx.value};breite;{breite.rx.value};ARUR;{aussenR.rx.value}/{innenR.rx.value}\r\n'
+    message = f'SETVARS:TEST FOBA;{ti_Barcode.value}\r\n'
+    doTCP_Transaction(reader,writer, message)
+
+    #Start Job
+    #message = f'STARTJOB\r\n'
+    #doTCP_Transaction(reader,writer, message)
+
     writer.close()
     await writer.wait_closed()
 

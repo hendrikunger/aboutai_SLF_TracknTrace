@@ -27,5 +27,6 @@ class BearingData(Base):
 
 if __name__ == "__main__":
     from sqlalchemy import create_engine
-    engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
+    #engine = create_engine("postgresql+psycopg2://admin:%HUJD290@10.0.0.70/dev", echo=True)
+    engine = create_engine("postgresql+psycopg2://postgres:%HUJD290@localhost/postgres", echo=True)
     Base.metadata.create_all(engine)
