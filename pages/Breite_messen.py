@@ -70,9 +70,7 @@ async def getMeasurement():
     await writer.drain()
     line = await reader.readline()
     data = line.decode('utf8').rstrip()
-
     print(f'Received: {data}', flush=True)
-
     writer.close()
     await writer.wait_closed()
     currentMeasurement.rx.value =  data
