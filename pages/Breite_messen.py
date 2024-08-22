@@ -3,10 +3,11 @@ import os
 import sys
 import asyncio
 import panel as pn
-import random
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
+import serial_asyncio
+import serial
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -56,18 +57,25 @@ def write_to_DB(bearing_id, measurement):
     return
 
 async def getMeasurement():
-    reader, writer = await asyncio.open_connection('127.0.0.1', 3000)
+    reader, writer = await serial_asyncio.open_serial_connection(url="/dev/cu.usbserial-0001", 
+                                                                baudrate=4800,
+                                                                bytesize=serial.SEVENBITS,
+                                                                parity=serial.PARITY_EVEN,
+                                                                stopbits=serial.STOPBITS_TWO,
+                                                                )
     print(f"Waiting for measurement", flush=True)
-    
+    message = f'?\r'
+    print(f'Sending:\n{message}', flush=True)
+    writer.write(message.encode())
+    await writer.drain()
     line = await reader.readline()
     data = line.decode('utf8').rstrip()
-    measurement = data.split(":")[1]
+
     print(f'Received: {data}', flush=True)
-    print(f'Measurement: {measurement}', flush=True)
 
     writer.close()
     await writer.wait_closed()
-    currentMeasurement.rx.value =  measurement
+    currentMeasurement.rx.value =  data
     return
 
 
