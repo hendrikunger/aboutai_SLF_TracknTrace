@@ -91,24 +91,24 @@ async def doTCP_Transaction(reader, writer, message):
 
 
 async def laser_tcp_ip_communication():
-    reader, writer = await asyncio.open_connection('10.0.0.2', 3000)
+    reader, writer = await asyncio.open_connection('192.168.255.7', 3000)
     print(f"send to Laser: {ti_Barcode.value}, {ueberstand.rx.value}, {breite.rx.value}, {aussenR.rx.value}, {innenR.rx.value}", flush=True)
     
     ##TODO prüfen 0b Job schon geladen ist, der Laser will nicht, dass der Job ständig nachgeladen wird (GetJobName)
 
     #Load Job Variables
     message = f'LOADJOB:TEST FOBA\r\n'
-    doTCP_Transaction(reader,writer, message)
+    await doTCP_Transaction(reader,writer, message)
 
 
     #Set Variables
-    message = f'SETVARS:DMC;{ti_Barcode.value};ueberstand;{ueberstand.rx.value};breite;{breite.rx.value};ARUR;{aussenR.rx.value}/{innenR.rx.value}\r\n'
+    #message = f'SETVARS:DMC;{ti_Barcode.value};ueberstand;{ueberstand.rx.value};breite;{breite.rx.value};ARUR;{aussenR.rx.value}/{innenR.rx.value}\r\n'
     message = f'SETVARS:TEST FOBA;{ti_Barcode.value}\r\n'
-    doTCP_Transaction(reader,writer, message)
+    await doTCP_Transaction(reader,writer, message)
 
     #Start Job
     #message = f'STARTJOB\r\n'
-    #doTCP_Transaction(reader,writer, message)
+    #await doTCP_Transaction(reader,writer, message)
 
     writer.close()
     await writer.wait_closed()
@@ -116,6 +116,7 @@ async def laser_tcp_ip_communication():
 
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
+    print("button clicked", flush=True)
     await laser_tcp_ip_communication()
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
