@@ -137,22 +137,22 @@ b_Save.rx.watch(button_save_function)
 
 ar_group = pn.widgets.RadioButtonGroup(
     name='Radio Button Group',
-    options=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+    options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
     button_type='primary',
     button_style="outline",
      height=80,
     align="center",
-    width=600,
+    width=1200,
     margin=20)
 
 ir_group  = pn.widgets.RadioButtonGroup(
     name="Innenring",
-    options=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+    options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
     button_type='primary',
     button_style="outline",
     height=80,
     align="center",
-    width=600,
+    width=1200,
     margin=20)
 
 
