@@ -71,6 +71,11 @@ async def getMeasurement():
     line = await reader.readline()
     data = line.decode('utf8').rstrip()
     print(f'Received: {data}', flush=True)
+    try:
+        data = float(data)
+    except ValueError:
+        pn.state.notifications.error(f'Messwert {data} ist keine Gleitkommazahl', duration=2000)
+        return
     writer.close()
     await writer.wait_closed()
     currentMeasurement.rx.value =  data
