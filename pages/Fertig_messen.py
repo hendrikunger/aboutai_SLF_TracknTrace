@@ -4,6 +4,7 @@ import sys
 import panel as pn
 import random
 import asyncio
+from os.path import isfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound, DataError
@@ -21,7 +22,12 @@ from db.models import BearingData
 
 TITLE = "Fertig messen"
 
-with open("config.json", "r") as f:
+# Load config file
+configPath = "config.json"
+if not isfile(configPath):
+    configPath = "default_config.json"
+    
+with open(configPath, "r") as f:
     config = json.load(f)
 
 

@@ -3,6 +3,7 @@ import os
 import sys
 import asyncio
 import panel as pn
+from os.path import isfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
@@ -17,7 +18,12 @@ from db.models import BearingData
 
 TITLE = "Endmarkieren"
 
-with open("config.json", "r") as f:
+# Load config file
+configPath = "config.json"
+if not isfile(configPath):
+    configPath = "default_config.json"
+    
+with open(configPath, "r") as f:
     config = json.load(f)
 
 
