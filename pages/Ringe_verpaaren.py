@@ -31,7 +31,7 @@ with open(configPath, "r") as f:
 
 pn.extension('tabulator', notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine(f"postgresql+psycopg2://{config['DATABASE']}", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config['DATABASE']}", echo=False)
 
 currentSerialIDs =  pn.rx([""])
 

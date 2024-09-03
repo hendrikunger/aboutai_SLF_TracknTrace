@@ -1,3 +1,4 @@
+#!/bin/bash
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate slf
 cd "C:/Users/admin/AppData/Local/aboutai_SLF_TracknTrace"
