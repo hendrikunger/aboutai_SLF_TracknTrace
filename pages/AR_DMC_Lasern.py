@@ -27,6 +27,7 @@ TITLE = "AR DMC Lasern"
 configPath = "config.json"
 if not isfile(configPath):
     configPath = "default_config.json"
+    print("loading default config", flush=True)
     
 with open(configPath, "r") as f:
     config = json.load(f)
@@ -34,7 +35,7 @@ with open(configPath, "r") as f:
 
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
+engine = create_engine(f"postgresql+psycopg://{config["DATABASE"]}", echo=False)
 
 allIDs = []
 currentSerialID = pn.rx("Empty")
@@ -44,7 +45,6 @@ currentSerialindex = None
 with open("links.json", "r") as f:
     links = json.load(f)
     text="\n".join([f"- [{key}]({value})" for key,value in links.items()])
-    print(text, flush=True)
 
 linklist = pn.pane.Markdown(
     "\n".join([f"## [{key}]({value})" for key,value in links.items()]),
@@ -74,7 +74,6 @@ with open("cur_sequence.json", "r") as f:
 
 def getSerialID():
     global currentSerialindex 
-    print(f"getSerialID Index: {currentSerialindex}", flush=True)
 
     if currentSerialindex >= len(allIDs):
         return "Alle IDs verarbeitet, bitte CSV aktualisieren und Seite neu laden"
@@ -109,12 +108,12 @@ async def button_function(event):
     running_indicator.value = running_indicator.visible = False
     b_Start.disabled = False
     #Save the Serial ID which has been lasered
-    with open("cur_sequence.json", "w") as f:
-        sequence["current"] = currentSerialindex
-        json.dump(sequence, f)
     #Get next Serial ID
     currentSerialID.rx.value = getSerialID()
     write_to_DB(currentSerialID.rx.value)
+    with open("cur_sequence.json", "w") as f:
+        sequence["current"] = currentSerialindex
+        json.dump(sequence, f)
 
 
 def write_to_DB(bearing_id):
