@@ -1,8 +1,8 @@
 import json
 import os
 import sys
+import asyncio
 import panel as pn
-import random
 from os.path import isfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -29,9 +29,12 @@ with open(configPath, "r") as f:
 
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=False)
 
-currentMeasurement = pn.rx("")
+ueberstand = pn.rx("")
+breite = pn.rx("")
+aussenR = pn.rx("")
+innenR = pn.rx("")
 
 
 #read links from json file
@@ -46,23 +49,23 @@ linklist = pn.pane.Markdown(
 
 
 
-def write_to_DB(bearing_id, measurement):
+
+def read_DB(bearing_id):
     session = Session(engine)
     try:
-        EntrytoUpdate = session.get_one(BearingData, bearing_id)
-        print(F"Updating: {EntrytoUpdate}", flush=True)
-        EntrytoUpdate.ueberstand = measurement
-        session.flush()
+        EntrytoReturn = session.get_one(BearingData, bearing_id)
     except NoResultFound:
         session.rollback()
         pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
-    else:
-        session.commit()
+
+    ueberstand.rx.value = EntrytoReturn.ueberstand
+    breite.rx.value = EntrytoReturn.breite
+    aussenR.rx.value = EntrytoReturn.aussenR
+    innenR.rx.value = EntrytoReturn.innenR
+    
     session.close()
     return
 
-def getMeasurement(event):
-    currentMeasurement.rx.value =  random.randint(0, 100)
 
 
 def process(event):
@@ -72,24 +75,81 @@ def process(event):
         ti_Barcode.value = ""
         return   
     running_indicator.value = running_indicator.visible = True
-    getMeasurement(None)
+    read_DB(ti_Barcode.value)
     running_indicator.value = running_indicator.visible = False
     ti_Barcode.focus = False
-    b_Reload.disabled = False
     b_Save.disabled = False
+
+
+async def doTCP_Transaction(reader, writer, message):
+    print(f'Sending:\n{message}', flush=True)
+    writer.write(message.encode())
+    await writer.drain()
+    line = await reader.readline()
+    data = line.decode('utf8').rstrip()
+    returncode = data.split(":")[1]
+    print(f'Received: {data}', flush=True)
+    print(f'Returncode: {returncode}', flush=True)
+    if returncode != "1":
+        pn.state.notifications.error(f'TCP IP Drucker Fehler mit Fehlercode {returncode}', duration=5000)
+        ti_Barcode.value = ""
+        return
+
+
+async def create_label():
+    with open("SLF_81x36_.prn", "r") as file:
+        data = file.read()
+        print(data)
+    
+    data = data.replace("BM[2]4035804439790", "BM[2]4035804439790")
+    data = data.replace("BM[13]-1", f"BM[13]{innenR.rx.value}")
+    data = data.replace("BM[14]-4", f"BM[14]{aussenR.rx.value}")
+    data = data.replace("BM[15]-102", f"BM[15]{breite.rx.value}")
+    data = data.replace("BM[16]+1", f"BM[16]{ueberstand.rx.value}")
+    
+    return data
+
+
+async def printer_tcp_ip_communication():
+    reader, writer = await asyncio.open_connection('localhost', 65535)
+    print(f"send to Printer: {ti_Barcode.value}, {ueberstand.rx.value}, {breite.rx.value}, {aussenR.rx.value}, {innenR.rx.value}", flush=True)
+
+    data = await create_label()
+    print(data)
+
+
+    #Load Job Variables
+    message = f'{data}\r\n'
+    await doTCP_Transaction(reader,writer, message)
+
+
+    #Set Variables
+    #message = f'SETVARS:DMC;{ti_Barcode.value};ueberstand;{ueberstand.rx.value};breite;{breite.rx.value};ARUR;{aussenR.rx.value}/{innenR.rx.value}\r\n'
+    #message = f'SETVARS:TEST FOBA;{ti_Barcode.value}\r\n'
+    #await doTCP_Transaction(reader,writer, message)
+
+    #Start Job
+    #message = f'STARTJOB\r\n'
+    #await doTCP_Transaction(reader,writer, message)
+
+    writer.close()
+    await writer.wait_closed()
+
 
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
-    write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
+    await printer_tcp_ip_communication()
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
-    b_Reload.disabled = True
     ti_Barcode.focus = True
-    currentMeasurement.rx.value = ""
+    ueberstand.rx.value = ""
+    breite.rx.value = ""
+    aussenR.rx.value = ""
+    innenR.rx.value = ""
 
 
 
-b_Save = pn.widgets.Button(name='Messung speichern',
+b_Save = pn.widgets.Button(name='An Drucker senden',
                            button_type='primary',
                            height=80,
                            sizing_mode="stretch_width",
@@ -97,13 +157,7 @@ b_Save = pn.widgets.Button(name='Messung speichern',
 b_Save.rx.watch(button_save_function)
 
 
-b_Reload = pn.widgets.ButtonIcon(icon="refresh", 
-                                 active_icon="refresh-dot",
-                                 toggle_duration=1000,
-                                 disabled=True,
-                                 height=80,
-                                 )
-b_Reload.on_click(getMeasurement)
+
 
 
 ti_Barcode = FocusedInput(name="Barcode", value="",)
@@ -118,17 +172,37 @@ serialCardID = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"),
                                         md_currentSerialID,
                                         pn.Spacer(sizing_mode="stretch_width")),
                                         width=250,
-                                        height=80,
+                                        height=60,
                                         hide_header=True)
 
-text_currentMeasurement = pn.rx("{currentMeasurement}").format(currentMeasurement=currentMeasurement)
-md_currentMeasurement = pn.pane.Markdown(text_currentMeasurement,
+md_AR_IR_Paarung = pn.pane.Markdown(pn.rx("{aussenR}/{innenR}").format(aussenR=aussenR, innenR=innenR),
                                          width=250,
                                          styles={'text-align': 'center',
                                          'font-size': '24px'})
-serialCardMeasurement = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentMeasurement, pn.Spacer(sizing_mode="stretch_width")),
+card_AR_IR_Paarung = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_AR_IR_Paarung, pn.Spacer(sizing_mode="stretch_width")),
                                        width=250,
-                                       height=80,
+                                       height=60,
+                                       hide_header=True)
+
+
+
+md_ueberstand = pn.pane.Markdown(pn.rx("{ueberstand}").format(ueberstand=ueberstand),
+                                         width=250,
+                                         styles={'text-align': 'center',
+                                         'font-size': '24px'})
+card_ueberstand = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_ueberstand, pn.Spacer(sizing_mode="stretch_width")),
+                                       width=250,
+                                       height=60,
+                                       hide_header=True)
+
+
+md_breite = pn.pane.Markdown(pn.rx("{breite}").format(breite=breite),
+                                         width=250,
+                                         styles={'text-align': 'center',
+                                         'font-size': '24px'})
+card_breite = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_breite, pn.Spacer(sizing_mode="stretch_width")),
+                                       width=250,
+                                       height=60,
                                        hide_header=True)
    
 
@@ -142,12 +216,16 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardID, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Messwert:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardMeasurement, pn.Row(b_Reload, pn.Spacer(sizing_mode="stretch_width"))),
-                   pn.Spacer(sizing_mode="stretch_width", height=100),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Außenring / Innenring:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_AR_IR_Paarung, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Überstandsmessung:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_ueberstand, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Breitenmessung:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_breite, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Spacer(sizing_mode="stretch_width", height=30),
                    b_Save,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Spacer(sizing_mode="stretch_width", height=100),
+                   pn.Spacer(sizing_mode="stretch_width", height=30),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), ti_Barcode, pn.Spacer(sizing_mode="stretch_width")),
                    )
 

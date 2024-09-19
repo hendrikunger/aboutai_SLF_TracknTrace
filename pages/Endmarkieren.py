@@ -29,7 +29,7 @@ with open(configPath, "r") as f:
 
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=False)
 
 ueberstand = pn.rx("")
 breite = pn.rx("")
@@ -122,7 +122,6 @@ async def laser_tcp_ip_communication():
 
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
-    print("button clicked", flush=True)
     await laser_tcp_ip_communication()
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
@@ -157,7 +156,7 @@ serialCardID = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"),
                                         md_currentSerialID,
                                         pn.Spacer(sizing_mode="stretch_width")),
                                         width=250,
-                                        height=80,
+                                        height=60,
                                         hide_header=True)
 
 md_AR_IR_Paarung = pn.pane.Markdown(pn.rx("{aussenR}/{innenR}").format(aussenR=aussenR, innenR=innenR),
@@ -166,7 +165,7 @@ md_AR_IR_Paarung = pn.pane.Markdown(pn.rx("{aussenR}/{innenR}").format(aussenR=a
                                          'font-size': '24px'})
 card_AR_IR_Paarung = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_AR_IR_Paarung, pn.Spacer(sizing_mode="stretch_width")),
                                        width=250,
-                                       height=80,
+                                       height=60,
                                        hide_header=True)
 
 
@@ -177,7 +176,7 @@ md_ueberstand = pn.pane.Markdown(pn.rx("{ueberstand}").format(ueberstand=ueberst
                                          'font-size': '24px'})
 card_ueberstand = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_ueberstand, pn.Spacer(sizing_mode="stretch_width")),
                                        width=250,
-                                       height=80,
+                                       height=60,
                                        hide_header=True)
 
 
@@ -187,7 +186,7 @@ md_breite = pn.pane.Markdown(pn.rx("{breite}").format(breite=breite),
                                          'font-size': '24px'})
 card_breite = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_breite, pn.Spacer(sizing_mode="stretch_width")),
                                        width=250,
-                                       height=80,
+                                       height=60,
                                        hide_header=True)
    
 
@@ -207,10 +206,10 @@ column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdow
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_ueberstand, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Breitenmessung:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_breite, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Spacer(sizing_mode="stretch_width", height=100),
+                   pn.Spacer(sizing_mode="stretch_width", height=30),
                    b_Save,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Spacer(sizing_mode="stretch_width", height=100),
+                   pn.Spacer(sizing_mode="stretch_width", height=30),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), ti_Barcode, pn.Spacer(sizing_mode="stretch_width")),
                    )
 

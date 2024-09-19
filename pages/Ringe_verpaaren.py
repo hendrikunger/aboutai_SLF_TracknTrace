@@ -31,7 +31,7 @@ with open(configPath, "r") as f:
 
 pn.extension('tabulator', notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine(f"postgresql+psycopg2://{config['DATABASE']}", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config['DATABASE']}", echo=False)
 
 currentSerialIDs =  pn.rx([""])
 
@@ -94,7 +94,8 @@ async def button_save_function(event):
 
 # Define an asynchronous function to handle TCP/IP communication
 async def tcp_ip_client(event):
-    reader, writer = await serial_asyncio.open_serial_connection(url="COM3", 
+    print(f'Calling', flush=True)
+    reader, writer = await serial_asyncio.open_serial_connection(url="COM5", 
                                                                     baudrate=115200,
                                                                     bytesize=serial.EIGHTBITS,
                                                                     parity=serial.PARITY_EVEN,
@@ -145,7 +146,7 @@ ar_group = pn.widgets.RadioButtonGroup(
     options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
     button_type='primary',
     button_style="outline",
-     height=80,
+     height=60,
     align="center",
     width=1200,
     margin=20)
@@ -155,7 +156,7 @@ ir_group  = pn.widgets.RadioButtonGroup(
     options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
     button_type='primary',
     button_style="outline",
-    height=80,
+    height=60,
     align="center",
     width=1200,
     margin=20)
@@ -170,7 +171,7 @@ currentSerialIDs.rx.watch(onCurrentSerialIDsChange, "value")
 
 
 
-df = pd.DataFrame({"SerialID": ["34534534","33345"]})
+df = pd.DataFrame({"SerialID": ["",]})
 tabulator_options = {
     "headerVisible": False
 }
@@ -184,7 +185,10 @@ custom_css = """
 pn.config.raw_css.append(custom_css)
 tabulator_widget = pn.widgets.Tabulator(df, width=400, show_index=False, theme="site", widths={"SerialID": 400},configuration=tabulator_options)
 
-
+text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=currentSerialIDs)
+md_currentSerialID = pn.pane.Markdown(text_currentSerialID,
+                                      styles={'text-align': 'center',
+                                      'font-size': '24px'})
    
 
 running_indicator = pn.indicators.LoadingSpinner(value=False,
@@ -197,15 +201,15 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
 
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer(n):"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), tabulator_widget, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")),
                    b_Scan,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Außenring Gruppe:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),ar_group, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Innenring Gruppe:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),ir_group, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Spacer(sizing_mode="stretch_width", height=100), b_Save,
+                   pn.Spacer(sizing_mode="stretch_width", height=30), b_Save,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Spacer(sizing_mode="stretch_width", height=100),
+                   pn.Spacer(sizing_mode="stretch_width", height=30),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), ti_Barcode, pn.Spacer(sizing_mode="stretch_width")),
                    )
 

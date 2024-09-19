@@ -30,7 +30,7 @@ with open(configPath, "r") as f:
 
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
-engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=True)
+engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=False)
 
 currentMeasurement = pn.rx("")
 
@@ -61,8 +61,8 @@ def write_to_DB(bearing_id, measurement):
     session.close()
     return
 
-async def getMeasurement():
-    reader, writer = await serial_asyncio.open_serial_connection(url="/dev/cu.usbserial-0001", 
+async def getMeasurement(event):
+    reader, writer = await serial_asyncio.open_serial_connection(url="Com5", 
                                                                 baudrate=4800,
                                                                 bytesize=serial.SEVENBITS,
                                                                 parity=serial.PARITY_EVEN,
@@ -95,7 +95,7 @@ async def process(event):
         return   
     running_indicator.value = running_indicator.visible = True
     running_indicator.name = "Warte auf Messgerät"
-    await getMeasurement()
+    
     running_indicator.value = running_indicator.visible = False
     running_indicator.name = ""
     ti_Barcode.focus = False
@@ -104,9 +104,9 @@ async def process(event):
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
     write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
-    running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
     ti_Barcode.focus = True
+    running_indicator.value = running_indicator.visible = False
     currentMeasurement.rx.value = ""
 
 
@@ -118,7 +118,12 @@ b_Save = pn.widgets.Button(name='Messung speichern',
                            disabled=True,)
 b_Save.rx.watch(button_save_function)
 
-
+b_Measure = pn.widgets.Button(   name="Laden",
+                                 button_type='primary',
+                                 disabled=False,
+                                 height=80,
+                                 )
+b_Measure.rx.watch(getMeasurement)
 
 
 ti_Barcode = FocusedInput(name="Barcode", value="",)
@@ -158,7 +163,7 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardID, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktueller Messwert:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardMeasurement, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardMeasurement, pn.Row(b_Measure, pn.Spacer(sizing_mode="stretch_width"))),
                    pn.Spacer(sizing_mode="stretch_width", height=100),
                    b_Save,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),
