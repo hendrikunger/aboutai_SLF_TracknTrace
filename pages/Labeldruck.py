@@ -7,6 +7,9 @@ from os.path import isfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
+import serial_asyncio
+import serial
+import win32print
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -48,8 +51,6 @@ linklist = pn.pane.Markdown(
 )
 
 
-
-
 def read_DB(bearing_id):
     session = Session(engine)
     try:
@@ -57,6 +58,11 @@ def read_DB(bearing_id):
     except NoResultFound:
         session.rollback()
         pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
+        ueberstand.rx.value = 0
+        breite.rx.value = 0
+        aussenR.rx.value = 0
+        innenR.rx.value = 0
+        return
 
     ueberstand.rx.value = EntrytoReturn.ueberstand
     breite.rx.value = EntrytoReturn.breite
@@ -82,63 +88,65 @@ def process(event):
 
 
 async def doTCP_Transaction(reader, writer, message):
-    print(f'Sending:\n{message}', flush=True)
     writer.write(message.encode())
     await writer.drain()
-    line = await reader.readline()
-    data = line.decode('utf8').rstrip()
-    returncode = data.split(":")[1]
-    print(f'Received: {data}', flush=True)
-    print(f'Returncode: {returncode}', flush=True)
-    if returncode != "1":
-        pn.state.notifications.error(f'TCP IP Drucker Fehler mit Fehlercode {returncode}', duration=5000)
-        ti_Barcode.value = ""
-        return
+    # line = await reader.readline()
+    # data = line.decode('utf8').rstrip()
+    # returncode = data.split(":")[1]
+    # print(f'Received: {data}', flush=True)
+    # print(f'Returncode: {returncode}', flush=True)
+    # if returncode != "1":
+    #     pn.state.notifications.error(f'TCP IP Drucker Fehler mit Fehlercode {returncode}', duration=5000)
+    #     ti_Barcode.value = ""
+    #     return
 
 
 async def create_label():
-    with open("SLF_81x36_.prn", "r") as file:
+    with open("SLF_81x36.prn", "r",  encoding="cp1252") as file:
         data = file.read()
-        print(data)
     
     data = data.replace("BM[2]4035804439790", "BM[2]4035804439790")
-    data = data.replace("BM[13]-1", f"BM[13]{innenR.rx.value}")
-    data = data.replace("BM[14]-4", f"BM[14]{aussenR.rx.value}")
-    data = data.replace("BM[15]-102", f"BM[15]{breite.rx.value}")
-    data = data.replace("BM[16]+1", f"BM[16]{ueberstand.rx.value}")
-    
+    data = data.replace("BM[13]-3", f"BM[13]{innenR.rx.value}")
+    data = data.replace("BM[14]-5", f"BM[14]{aussenR.rx.value}")
+    data = data.replace("BM[15]-283", f"BM[15]{breite.rx.value}")
+    data = data.replace("BM[16]1,5", f"BM[16]{ueberstand.rx.value}")
+     
     return data
 
 
 async def printer_tcp_ip_communication():
-    reader, writer = await asyncio.open_connection('localhost', 65535)
+
+    reader, writer = await asyncio.open_connection('192.168.133.221', 9100)
     print(f"send to Printer: {ti_Barcode.value}, {ueberstand.rx.value}, {breite.rx.value}, {aussenR.rx.value}, {innenR.rx.value}", flush=True)
 
     data = await create_label()
-    print(data)
 
 
     #Load Job Variables
     message = f'{data}\r\n'
     await doTCP_Transaction(reader,writer, message)
 
-
-    #Set Variables
-    #message = f'SETVARS:DMC;{ti_Barcode.value};ueberstand;{ueberstand.rx.value};breite;{breite.rx.value};ARUR;{aussenR.rx.value}/{innenR.rx.value}\r\n'
-    #message = f'SETVARS:TEST FOBA;{ti_Barcode.value}\r\n'
-    #await doTCP_Transaction(reader,writer, message)
-
-    #Start Job
-    #message = f'STARTJOB\r\n'
-    #await doTCP_Transaction(reader,writer, message)
-
     writer.close()
     await writer.wait_closed()
 
+async def printer_win32_communication():
+
+    printer_handle = win32print.OpenPrinter("Vario III 107/12")
+    try:
+        job = win32print.StartDocPrinter(printer_handle, 1, ("RAW print job", None, "RAW"))
+        win32print.StartPagePrinter(printer_handle)
+        text = await create_label()
+        win32print.WritePrinter(printer_handle, text.encode("cp1252"))
+        win32print.EndPagePrinter(printer_handle)
+        win32print.EndDocPrinter(printer_handle)
+    except Exception as e:
+        print(f"Error {e}")
+    finally:
+        win32print.ClosePrinter(printer_handle)
 
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
-    await printer_tcp_ip_communication()
+    await printer_win32_communication()
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
     ti_Barcode.focus = True
