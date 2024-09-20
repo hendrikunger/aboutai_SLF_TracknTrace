@@ -28,6 +28,7 @@ configPath = "config.json"
 if not isfile(configPath):
     configPath = "default_config.json"
     print("loading default config", flush=True)
+    print("loading default config", flush=True)
     
 with open(configPath, "r") as f:
     config = json.load(f)

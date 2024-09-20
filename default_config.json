@@ -4,6 +4,6 @@
     "THEME": "dark",
     "LOGO": "/assets/SLF-logo-bg-white.svg",
     "SIDEBAR_OFF": false,
-    "DATABASE":"postgres:%HUJD290@10.0.0.70/dev"
+    "DATABASE":"slf_trace:slf_trace@localhost/slf"
 
 }
