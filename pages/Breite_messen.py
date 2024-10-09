@@ -104,6 +104,7 @@ async def process(event):
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
     write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
+    pn.state.notifications.success(f'Erfolgreich gespeichert', duration=3000)
     b_Save.disabled = True
     ti_Barcode.focus = True
     running_indicator.value = running_indicator.visible = False

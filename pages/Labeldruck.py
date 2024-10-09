@@ -51,6 +51,14 @@ linklist = pn.pane.Markdown(
 )
 
 
+def zeroValues():
+    ueberstand.rx.value = 0
+    breite.rx.value = 0
+    aussenR.rx.value = 0
+    innenR.rx.value = 0
+    return False
+
+
 def read_DB(bearing_id):
     session = Session(engine)
     try:
@@ -58,11 +66,18 @@ def read_DB(bearing_id):
     except NoResultFound:
         session.rollback()
         pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
-        ueberstand.rx.value = 0
-        breite.rx.value = 0
-        aussenR.rx.value = 0
-        innenR.rx.value = 0
-        return
+        return zeroValues()
+
+    if not EntrytoReturn.ueberstand:
+        pn.state.notifications.error(f'Fehlender Wert für DMC {bearing_id}. Keine Überstandsmessung', duration=0)
+        return zeroValues()
+    if not EntrytoReturn.breite:
+        pn.state.notifications.error(f'Fehlender Wert für DMC {bearing_id}. Keine Breitenmessung', duration=0)
+        return zeroValues()
+    if not EntrytoReturn.aussenR or not EntrytoReturn.innenR:
+        pn.state.notifications.error(f'Fehlender Wert für DMC {bearing_id}. Keine IR / AR Paarung', duration=0)
+        return zeroValues()
+
 
     ueberstand.rx.value = EntrytoReturn.ueberstand
     breite.rx.value = EntrytoReturn.breite
@@ -70,7 +85,7 @@ def read_DB(bearing_id):
     innenR.rx.value = EntrytoReturn.innenR
     
     session.close()
-    return
+    return True
 
 
 
@@ -81,10 +96,14 @@ def process(event):
         ti_Barcode.value = ""
         return   
     running_indicator.value = running_indicator.visible = True
-    read_DB(ti_Barcode.value)
-    running_indicator.value = running_indicator.visible = False
-    ti_Barcode.focus = False
-    b_Save.disabled = False
+    if read_DB(ti_Barcode.value):
+        ti_Barcode.focus = False
+        b_Save.disabled = False
+        running_indicator.value = running_indicator.visible = False
+    else:
+        ti_Barcode.focus = True
+        b_Save.disabled = True
+        running_indicator.value = running_indicator.visible = False
 
 
 async def doTCP_Transaction(reader, writer, message):
@@ -147,14 +166,14 @@ async def printer_win32_communication():
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
     await printer_win32_communication()
+    pn.state.notifications.success(f'Erfolgreich zum Drucker gesendet', duration=3000)
     running_indicator.value = running_indicator.visible = False
-    b_Save.disabled = True
-    ti_Barcode.focus = True
     ueberstand.rx.value = ""
     breite.rx.value = ""
     aussenR.rx.value = ""
     innenR.rx.value = ""
-
+    b_Save.disabled = True
+    ti_Barcode.focus = True
 
 
 b_Save = pn.widgets.Button(name='An Drucker senden',
@@ -183,7 +202,7 @@ serialCardID = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"),
                                         height=60,
                                         hide_header=True)
 
-md_AR_IR_Paarung = pn.pane.Markdown(pn.rx("{aussenR}/{innenR}").format(aussenR=aussenR, innenR=innenR),
+md_AR_IR_Paarung = pn.pane.Markdown(pn.rx("{innenR}/{aussenR}").format(aussenR=aussenR, innenR=innenR),
                                          width=250,
                                          styles={'text-align': 'center',
                                          'font-size': '24px'})
@@ -224,12 +243,12 @@ running_indicator = pn.indicators.LoadingSpinner(value=False,
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCardID, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Außenring / Innenring:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Innenring / Außenring:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_AR_IR_Paarung, pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Überstandsmessung:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_ueberstand, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Breitenmessung:"), pn.Spacer(sizing_mode="stretch_width")),
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_breite, pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Überstandsmessung:"), pn.Spacer(sizing_mode="stretch_width")),
+                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), card_ueberstand, pn.Spacer(sizing_mode="stretch_width")),
                    pn.Spacer(sizing_mode="stretch_width", height=30),
                    b_Save,
                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),

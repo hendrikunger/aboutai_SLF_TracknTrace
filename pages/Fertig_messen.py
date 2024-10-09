@@ -114,6 +114,7 @@ async def process(event):
 def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
     write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
+    pn.state.notifications.success(f'Erfolgreich gespeichert', duration=3000)
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
     b_Reload.disabled = True
@@ -131,10 +132,9 @@ b_Save = pn.widgets.Button(name='Messung speichern',
 b_Save.rx.watch(button_save_function)
 
 
-b_Reload = pn.widgets.ButtonIcon(icon="refresh", 
-                                 active_icon="refresh-dot",
-                                 toggle_duration=1000,
-                                 disabled=True,
+b_Reload = pn.widgets.Button(    name="Laden",
+                                 button_type='primary',
+                                 disabled=False,
                                  height=80,
                                  )
 b_Reload.on_click(lambda event: asyncio.create_task(process(event)))

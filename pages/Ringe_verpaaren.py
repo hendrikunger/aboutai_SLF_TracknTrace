@@ -86,6 +86,7 @@ async def button_save_function(event):
     running_indicator.value = True
     running_indicator.visible = True
     await write_to_DB(currentSerialIDs.rx.value, ar_group.value, ir_group.value)
+    pn.state.notifications.success(f'Erfolgreich gespeichert', duration=3000)
     running_indicator.value = False
     running_indicator.visible = False
     b_Save.disabled = True
