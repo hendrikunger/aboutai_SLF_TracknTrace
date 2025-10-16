@@ -163,3 +163,4 @@ cython_debug/
 #.idea/
 __pycache__/components.cpython-312.pyc
 db/__pycache__/models.cpython-312.pyc
+.DS_Store
