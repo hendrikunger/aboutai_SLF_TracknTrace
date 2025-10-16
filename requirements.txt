@@ -3,3 +3,4 @@ pyalchemy
 panel
 watchfiles
 win32print
+pyserial-asyncio

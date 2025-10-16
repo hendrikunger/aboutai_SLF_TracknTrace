@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
 import serial_asyncio
 import serial
-import win32print
+#import win32print
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -165,7 +165,7 @@ async def printer_win32_communication():
 
 async def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
-    await printer_win32_communication()
+    #await printer_win32_communication()
     pn.state.notifications.success(f'Erfolgreich zum Drucker gesendet', duration=3000)
     running_indicator.value = running_indicator.visible = False
     ueberstand.rx.value = ""

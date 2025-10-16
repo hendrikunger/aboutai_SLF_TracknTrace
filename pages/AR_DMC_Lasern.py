@@ -1,10 +1,14 @@
-import panel as pn
-import json
-import csv
 import asyncio
 import os
+import json
 import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 from os.path import isfile
+import panel as pn
+from watchfiles import awatch, Change
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -17,8 +21,7 @@ if main_project_dir not in sys.path:
 
 from db.models import BearingData
 
-#panel serve pages/*.py --autoreload --port 80 --admin  --static-dirs assets=./assets
-
+pn.extension(sizing_mode="stretch_width")
 
 
 TITLE = "AR DMC Lasern"
@@ -33,13 +36,12 @@ if not isfile(configPath):
 with open(configPath, "r") as f:
     config = json.load(f)
 
-
 pn.extension(notifications=True)
 pn.state.notifications.position = 'top-right'
 engine = create_engine(f"postgresql+psycopg2://{config["DATABASE"]}", echo=False)
 
 allIDs = []
-currentSerialID = pn.rx("Empty")
+currentSerialID = pn.rx("Leer")
 currentSerialindex = None
 
 #read links from json file
@@ -52,70 +54,38 @@ linklist = pn.pane.Markdown(
     sizing_mode="stretch_width",
 )
 
-
-
-with open("allIDs.csv", newline='') as csvfile:
-    csvreader = csv.reader(csvfile)
-    for row in csvreader:
-        if row == []: continue
-        allIDs.append(row)
-
-def checkSerialID(index: int) -> str:
-    if index >= len(allIDs):
-        return "Alle IDs verarbeitet, bitte CSV aktualisieren und Seite neu laden"
-    else:
-        return str(allIDs[index - 1][0])
-
-
-with open("cur_sequence.json", "r") as f:
-    sequence = json.load(f)
-    currentSerialindex = sequence["current"]
-    currentSerialID.rx.value = checkSerialID(currentSerialindex)
-
-
-def getSerialID():
-    global currentSerialindex 
-
-    if currentSerialindex >= len(allIDs):
-        return "Alle IDs verarbeitet, bitte CSV aktualisieren und Seite neu laden"
-    else:
-        currentSerialindex = currentSerialindex + 1
-        return str(allIDs[currentSerialindex-1][0])
+# --- CONFIG -------------------------------------------------------------------
+# Folder to watch and the CSV filename to react to.
+# If CSV_NAME is None, the app will react to the first *.csv file that changes.
+WATCH_DIR = Path(config.get("DMC_LASERN_CSV", "./watchtest"))
+CSV_NAME: Optional[str] = None
 
 
 
-async def laser_tcp_ip_communication(id: str):
-    reader, writer = await asyncio.open_connection('127.0.0.1', 3000)
-    print(f"send to Laser: {id}", flush=True)
-    message = 'Hello, World!'
-    print(f'Sending: {message} - for ID: {id}')
-    writer.write(message.encode())
-    await writer.drain()
-    line = await reader.readline()
-    data = line.decode('utf8').rstrip()
-    print(f'Received: {data.decode()}')
+# --- Helpers ------------------------------------------------------------------
+def extract_last_nonempty_line(text: str) -> Optional[str]:
+    for line in reversed(text.splitlines()):
+        s = line.strip()
+        if s:
+            return s
+    return None
 
-    writer.close()
-    await writer.wait_closed()
-
-
-
-async def button_function(event):
-    global currentSerialindex
-    #disable button
-    b_Start.disabled = True
-    running_indicator.value = running_indicator.visible = True
-    #await laser_tcp_ip_communication(currentSerialID.rx.value)
-    running_indicator.value = running_indicator.visible = False
-    b_Start.disabled = False
-    #Save the Serial ID which has been lasered
-    #Get next Serial ID
-    write_to_DB(currentSerialID.rx.value)
-    currentSerialID.rx.value = getSerialID()
-    with open("cur_sequence.json", "w") as f:
-        sequence["current"] = currentSerialindex
-        json.dump(sequence, f)
-
+async def read_last_line_and_delete(file_path: Path) -> Optional[str]:
+    # brief retries in case writer still has handle open
+    for attempt in range(5):
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            last_line = extract_last_nonempty_line(content) or ""
+            try:
+                os.remove(file_path)
+            except PermissionError:
+                await asyncio.sleep(0.2)
+                os.remove(file_path)
+            return last_line
+        except (PermissionError, OSError) as e:
+            append_log(f"⚠️ Versuch {attempt+1}/5 beim Zugriff auf Datei: {e}")
+            await asyncio.sleep(0.2)
+    return None
 
 def write_to_DB(bearing_id):
     session = Session(engine)
@@ -130,14 +100,81 @@ def write_to_DB(bearing_id):
         session.commit()
     session.close()
     return
-  
+
+# --- Async watcher task -------------------------------------------------------
+async def watch_loop():
+    watch_dir = WATCH_DIR.resolve()
+    target = (watch_dir / CSV_NAME).resolve() if CSV_NAME else None
+
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    append_log(f"Überwachtes Verzeichnis: {watch_dir}")
+    if target:
+        append_log(f"Überwachte Datei: {target.name}")
+
+    status.object = "- Status: **watching**"
+
+    try:
+        async for changes in awatch(watch_dir, recursive=False, stop_event=None):
+            for change, path in changes:
+                
+                p = Path(path).resolve()
+                if p.suffix.lower() != ".csv":
+                    continue
+                if target and p != target:
+                    continue
+                if change not in (Change.added, Change.modified):
+                    continue
+                if not p.exists():
+                    continue 
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                append_log(f"{now} -  Datei erkannt: {p.name}")
+                status.object = "- Status: **processing**"
+
+                last_line = await read_last_line_and_delete(p)
+                if last_line is not None:
+                    currentSerialID.rx.value = int(last_line.split(';')[1].strip())
+                    write_to_DB(currentSerialID.rx.value)
+                    append_log(f"Serialnummer ausgelesen: {currentSerialID.rx.value}")
+                else:
+                    append_log("❌ Fehler beim Lesen / Löschen der Datei.")
+                status.object = "- Status: **watching**"
+    except asyncio.CancelledError:
+        append_log("🛑 Dateiüberwachung beendet.")
+        raise
+    finally:
+        status.object = "- Status: **idle**"
+
+# --- Session lifecycle (async-safe) -------------------------------------------
+def _start_task_onload():
+    """
+    Called by Panel after the document is ready. We *then* schedule task creation
+    on the document's running asyncio loop via add_next_tick_callback.
+    """
+    def _spawn():
+        sess = pn.state.curdoc.session_context
+        # store task on the session_context so each browser tab has its own
+        if not hasattr(sess, "_watch_task") or getattr(sess, "_watch_task").done():
+            sess._watch_task = asyncio.create_task(watch_loop())
+            append_log("✅ Verzeichnisüberwachung gestartet.")
+    # Ensure we’re on the document’s event loop:
+    pn.state.curdoc.add_next_tick_callback(_spawn)
+
+def _stop_task(session_context):
+    """
+    Required signature for on_session_destroyed. Cancel the per-session task.
+    """
+    task = getattr(session_context, "_watch_task", None)
+    if task and not task.done():
+        task.cancel()
+        append_log("⏹️ Cancellation requested.")
+
+# Register hooks (safe inside app script)
+pn.state.onload(_start_task_onload)
+pn.state.on_session_destroyed(_stop_task)
 
 
 text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=currentSerialID)
 
-
-b_Start = pn.widgets.Button(name='Seriennummer zum Laser übertragen', button_type='primary', height=80, sizing_mode="stretch_width")
-b_Start.rx.watch(button_function)
 
 md_currentSerialID = pn.pane.Markdown(text_currentSerialID, width=250, styles={'text-align': 'center', 'font-size': '24px'})
 serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")), width=250, hide_header=True)
@@ -145,11 +182,21 @@ serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSe
 running_indicator = pn.indicators.LoadingSpinner(
     value=False, height=100, width=100, color="secondary", visible=False, margin=50)
 
+status = pn.pane.Markdown("- Status: **idle**")
+log = pn.widgets.TextAreaInput(value="", height=240, sizing_mode="stretch_width", disabled=True)
+
+def append_log(msg: str) -> None:
+    # safe to call from event loop; keep bounded
+    log.value = (log.value + msg + "\n")[-8000:]
+
+
 
 column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCard, pn.Spacer(sizing_mode="stretch_width")),
-                   b_Start,
-                   pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),)
+                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCard, pn.Spacer(sizing_mode="stretch_width")),
+                    pn.Spacer(height=8),
+                    pn.pane.Markdown("### Log"),
+                    log,
+                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),)
 
 
 pn.template.BootstrapTemplate(
@@ -162,5 +209,3 @@ pn.template.BootstrapTemplate(
     collapsed_sidebar=config["SIDEBAR_OFF"],
     sidebar_width = 200,
 ).servable()
-
-

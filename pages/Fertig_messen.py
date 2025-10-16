@@ -70,13 +70,13 @@ def write_to_DB(bearing_id, measurement):
     return
 
 
-async def watch_for_file(filepath):
-    for changes in watch(os.path.dirname(filepath), recursive=False):
-        for change_type, path in changes:
-            print(f'change_type: {change_type}, path: {path}', flush=True)
-            if (change_type == 1 or change_type== 2) and path.endswith(os.path.basename(filepath)):
-                await getMeasurement(filepath)
-                return
+    async def watch_for_file(filepath):
+        for changes in watch(os.path.dirname(filepath), recursive=False):
+            for change_type, path in changes:
+                print(f'change_type: {change_type}, path: {path}', flush=True)
+                if (change_type == 1 or change_type== 2) and path.endswith(os.path.basename(filepath)):
+                    await getMeasurement(filepath)
+                    return
 
 
 async def getMeasurement():
