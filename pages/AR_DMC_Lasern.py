@@ -60,7 +60,23 @@ linklist = pn.pane.Markdown(
 WATCH_DIR = Path(config.get("DMC_LASERN_CSV", "./watchtest"))
 CSV_NAME: Optional[str] = None
 
+# -- UI -----------------------------------------------------------------------
 
+text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=currentSerialID)
+
+
+md_currentSerialID = pn.pane.Markdown(text_currentSerialID, width=250, styles={'text-align': 'center', 'font-size': '24px'})
+serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")), width=250, hide_header=True)
+
+running_indicator = pn.indicators.LoadingSpinner(
+    value=False, height=100, width=100, color="secondary", visible=False, margin=50)
+
+status = pn.pane.Markdown("- Status: **idle**")
+log = pn.widgets.TextAreaInput(value="", height=240, sizing_mode="stretch_width", disabled=True)
+
+def append_log(msg: str) -> None:
+    # safe to call from event loop; keep bounded
+    log.value = (log.value + msg + "\n")[-8000:]
 
 # --- Helpers ------------------------------------------------------------------
 def extract_last_nonempty_line(text: str) -> Optional[str]:
@@ -139,10 +155,9 @@ async def watch_loop():
                     append_log("❌ Fehler beim Lesen / Löschen der Datei.")
                 status.object = "- Status: **watching**"
     except asyncio.CancelledError:
-        append_log("🛑 Dateiüberwachung beendet.")
-        raise
-    finally:
-        status.object = "- Status: **idle**"
+        return
+    
+
 
 # --- Session lifecycle (async-safe) -------------------------------------------
 def _start_task_onload():
@@ -166,28 +181,11 @@ def _stop_task(session_context):
     task = getattr(session_context, "_watch_task", None)
     if task and not task.done():
         task.cancel()
-        append_log("⏹️ Cancellation requested.")
 
 # Register hooks (safe inside app script)
 pn.state.onload(_start_task_onload)
 pn.state.on_session_destroyed(_stop_task)
 
-
-text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=currentSerialID)
-
-
-md_currentSerialID = pn.pane.Markdown(text_currentSerialID, width=250, styles={'text-align': 'center', 'font-size': '24px'})
-serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")), width=250, hide_header=True)
-
-running_indicator = pn.indicators.LoadingSpinner(
-    value=False, height=100, width=100, color="secondary", visible=False, margin=50)
-
-status = pn.pane.Markdown("- Status: **idle**")
-log = pn.widgets.TextAreaInput(value="", height=240, sizing_mode="stretch_width", disabled=True)
-
-def append_log(msg: str) -> None:
-    # safe to call from event loop; keep bounded
-    log.value = (log.value + msg + "\n")[-8000:]
 
 
 
