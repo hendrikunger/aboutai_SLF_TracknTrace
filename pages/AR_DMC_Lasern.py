@@ -12,6 +12,8 @@ from watchfiles import awatch, Change
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -86,36 +88,59 @@ def extract_last_nonempty_line(text: str) -> Optional[str]:
             return s
     return None
 
-async def read_last_line_and_delete(file_path: Path) -> Optional[str]:
-    # brief retries in case writer still has handle open
+async def read_lines_and_delete(file_path: Path) -> list[str]:
+    """Return all non-empty lines; delete file afterwards."""
     for attempt in range(5):
         try:
             content = file_path.read_text(encoding="utf-8", errors="ignore")
-            last_line = extract_last_nonempty_line(content) or ""
+            lines = [ln for ln in (ln.strip() for ln in content.splitlines()) if ln]
+            #skip first line because it its a header
+            if lines and lines[0].startswith("Zeitstempel"):
+                lines = lines[1:]
             try:
                 os.remove(file_path)
             except PermissionError:
                 await asyncio.sleep(0.2)
                 os.remove(file_path)
-            return last_line
+            return lines
         except (PermissionError, OSError) as e:
             append_log(f"⚠️ Versuch {attempt+1}/5 beim Zugriff auf Datei: {e}")
             await asyncio.sleep(0.2)
-    return None
+    return []
 
-def write_to_DB(bearing_id):
+def extract_ids_from_lines(lines: list[str]) -> list[int]:
+    ids = []
+    for ln in lines:
+        parts = ln.split(';')
+        if len(parts) > 1:
+            try:
+                ids.append(int(parts[1].strip()))
+            except ValueError:
+                append_log(f"      ⚠️ Konnte ID nicht parsen aus Zeile: {ln!r}")
+    return ids
+
+def upsert_ids(ids: list[int]) -> tuple[int, int]:
+    """
+    Insert all ids via ON CONFLICT DO NOTHING.
+    Returns (inserted_count, skipped_count).
+    """
+    if not ids:
+        return 0, 0
     session = Session(engine)
     try:
-        newEntry = BearingData(id=bearing_id)
-        session.add(newEntry)
-        session.flush()
-    except IntegrityError:
-        session.rollback()
-        pn.state.notifications.error(f'DMC schon in der Datenbank:', duration=0)
-    else:
+        values = [{"id": i} for i in ids]
+        stmt = pg_insert(BearingData.__table__).values(values).on_conflict_do_nothing(
+            index_elements=["id"]
+        )
+        result = session.execute(stmt)
         session.commit()
-    session.close()
-    return
+        # result.rowcount may be None on some drivers; compute via query if needed
+        # For psycopg2 with INSERT ... DO NOTHING, rowcount is usually the number inserted.
+        inserted = result.rowcount if result.rowcount is not None else 0
+        skipped = len(ids) - inserted
+        return inserted, skipped
+    finally:
+        session.close()
 
 # --- Async watcher task -------------------------------------------------------
 async def watch_loop():
@@ -146,13 +171,23 @@ async def watch_loop():
                 append_log(f"{now} -  Datei erkannt: {p.name}")
                 status.object = "- Status: **processing**"
 
-                last_line = await read_last_line_and_delete(p)
-                if last_line is not None:
-                    currentSerialID.rx.value = int(last_line.split(';')[1].strip())
-                    write_to_DB(currentSerialID.rx.value)
-                    append_log(f"Serialnummer ausgelesen: {currentSerialID.rx.value}")
+                lines = await read_lines_and_delete(p)
+                if lines:
+                    ids = extract_ids_from_lines(lines)
+                    if not ids:
+                        append_log("      ⚠️ Keine gültigen IDs in Datei gefunden.")
+                    else:
+                        # de-duplicate within the same file
+                        ids = list(dict.fromkeys(ids))
+                        inserted, skipped = upsert_ids(ids)
+
+                        # Update the “current” serial number for display (take last parsed)
+                        currentSerialID.rx.value = ids[-1]
+                        append_log(
+                            f"     {len(ids)} ID(s) erkannt → {inserted} neu, {skipped} bereits vorhanden."
+                        )
                 else:
-                    append_log("❌ Fehler beim Lesen / Löschen der Datei.")
+                    append_log("    ❌ Fehler beim Lesen / Löschen der Datei.")
                 status.object = "- Status: **watching**"
     except asyncio.CancelledError:
         return
