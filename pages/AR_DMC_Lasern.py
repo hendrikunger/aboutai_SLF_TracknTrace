@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 from os.path import isfile
 import panel as pn
+import param
 from watchfiles import awatch, Change
 
 from sqlalchemy import create_engine
@@ -27,6 +28,34 @@ pn.extension(sizing_mode="stretch_width")
 
 
 TITLE = "AR DMC Lasern"
+
+class AutoScrollLog(pn.reactive.ReactiveHTML):
+    text = param.String(default="")
+
+    _template = """
+    <pre id="log"
+         style="
+            height:240px;
+            overflow-y:auto;
+            margin:0;
+            padding:8px;
+            border-radius:6px;
+            background-color:#1e1e1e;
+            color:#e0e0e0;
+            font-family:Menlo, Consolas, monospace;
+            white-space:pre-wrap;
+            line-height:1.4;
+         ">
+    </pre>
+    """
+
+    _scripts = {
+        "text": """
+            log.textContent = data.text;
+            log.scrollTop = log.scrollHeight;
+        """
+    }
+
 
 # Load config file
 configPath = "config.json"
@@ -74,11 +103,13 @@ running_indicator = pn.indicators.LoadingSpinner(
     value=False, height=100, width=100, color="secondary", visible=False, margin=50)
 
 status = pn.pane.Markdown("- Status: **idle**")
-log = pn.widgets.TextAreaInput(value="", height=240, sizing_mode="stretch_width", disabled=True)
+# Create log widget
+log = AutoScrollLog()  # replaces pn.widgets.TextAreaInput
 
 def append_log(msg: str) -> None:
-    # safe to call from event loop; keep bounded
-    log.value = (log.value + msg + "\n")[-8000:]
+    # keep the log bounded so it doesn’t grow forever
+    new_val = (log.text + msg + "\n")[-8000:]
+    log.text = new_val
 
 # --- Helpers ------------------------------------------------------------------
 def extract_last_nonempty_line(text: str) -> Optional[str]:
