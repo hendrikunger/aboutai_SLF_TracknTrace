@@ -97,7 +97,7 @@ text_currentSerialID = pn.rx("{currentSerialID}").format(currentSerialID=current
 
 
 md_currentSerialID = pn.pane.Markdown(text_currentSerialID, width=250, styles={'text-align': 'center', 'font-size': '24px'})
-serialCard = pn.Card(pn.Row(pn.Spacer(sizing_mode="stretch_width"), md_currentSerialID, pn.Spacer(sizing_mode="stretch_width")), width=250, hide_header=True)
+serialCard = pn.Card(pn.Row(pn.HSpacer(), md_currentSerialID, pn.HSpacer()), width=250, hide_header=True)
 
 running_indicator = pn.indicators.LoadingSpinner(
     value=False, height=100, width=100, color="secondary", visible=False, margin=50)
@@ -150,23 +150,34 @@ def extract_ids_from_lines(lines: list[str]) -> list[int]:
                 append_log(f"      ⚠️ Konnte ID nicht parsen aus Zeile: {ln!r}")
     return ids
 
-def upsert_ids(ids: list[int]) -> tuple[int, int]:
+def upsert_ids(ids: list[int],
+               ar_value: Optional[int] = None,
+               ir_value: Optional[int] = None) -> tuple[int, int]:
     """
-    Insert all ids via ON CONFLICT DO NOTHING.
+    Insert ids with current ring selections into (id, aussenR, innenR).
+    Skips duplicates via ON CONFLICT DO NOTHING.
     Returns (inserted_count, skipped_count).
     """
     if not ids:
         return 0, 0
+
+    # If not provided explicitly, read from the Panel widgets
+    if ar_value is None:
+        ar_value = ar_group.value  # may be None if nothing selected
+    if ir_value is None:
+        ir_value = ir_group.value  # may be None if nothing selected
+
+    values = [{"id": i, "aussenR": ar_value, "innenR": ir_value} for i in ids]
+
     session = Session(engine)
     try:
-        values = [{"id": i} for i in ids]
-        stmt = pg_insert(BearingData.__table__).values(values).on_conflict_do_nothing(
-            index_elements=["id"]
+        stmt = (
+            pg_insert(BearingData.__table__)
+            .values(values)
+            .on_conflict_do_nothing(index_elements=["id"])
         )
         result = session.execute(stmt)
         session.commit()
-        # result.rowcount may be None on some drivers; compute via query if needed
-        # For psycopg2 with INSERT ... DO NOTHING, rowcount is usually the number inserted.
         inserted = result.rowcount if result.rowcount is not None else 0
         skipped = len(ids) - inserted
         return inserted, skipped
@@ -253,16 +264,41 @@ pn.state.onload(_start_task_onload)
 pn.state.on_session_destroyed(_stop_task)
 
 
+ar_group = pn.widgets.RadioButtonGroup(
+    name='Radio Button Group',
+    options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
+    button_type='primary',
+    button_style="outline",
+     height=60,
+    align="center",
+    width=1200,
+    margin=20)
+
+ir_group  = pn.widgets.RadioButtonGroup(
+    name="Innenring",
+    options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
+    button_type='primary',
+    button_style="outline",
+    height=60,
+    align="center",
+    width=1200,
+    margin=20)
 
 
-column = pn.Column(pn.Row(pn.Spacer(sizing_mode="stretch_width"),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.Spacer(sizing_mode="stretch_width")),
-                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), serialCard, pn.Spacer(sizing_mode="stretch_width")),
-                    pn.Spacer(height=8),
+
+column = pn.Column(pn.Row(pn.HSpacer(),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.HSpacer()),
+                    pn.Row(pn.HSpacer(), serialCard, pn.HSpacer()),
+                    pn.Spacer(height=60),
+                    pn.Row(pn.HSpacer(),pn.pane.Markdown("# Außenring Gruppe:"), pn.HSpacer()),
+                    pn.Row(pn.HSpacer(),ar_group, pn.HSpacer()),
+                    pn.Row(pn.HSpacer(),pn.pane.Markdown("# Innenring Gruppe:"), pn.HSpacer()),
+                    pn.Row(pn.HSpacer(),ir_group, pn.HSpacer()),
+                    pn.Spacer(height=60),
                     pn.pane.Markdown("### Log"),
                     log,
-                    pn.Row(pn.Spacer(sizing_mode="stretch_width"), running_indicator, pn.Spacer(sizing_mode="stretch_width")),)
+                    pn.Row(pn.HSpacer(), running_indicator, pn.HSpacer()),)
 
-
+#ar_group.value, ir_group.value
 pn.template.BootstrapTemplate(
     title=TITLE,
     sidebar=[linklist],
