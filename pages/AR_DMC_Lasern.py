@@ -266,7 +266,7 @@ pn.state.on_session_destroyed(_stop_task)
 
 ar_group = pn.widgets.RadioButtonGroup(
     name='Radio Button Group',
-    options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
+    options=[0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15],
     button_type='primary',
     button_style="outline",
      height=60,
@@ -276,7 +276,7 @@ ar_group = pn.widgets.RadioButtonGroup(
 
 ir_group  = pn.widgets.RadioButtonGroup(
     name="Innenring",
-    options=[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -15, -16, -17, -18, -19, -20, -21, -22, -23, -25, -27, -29, -33, -38],
+    options=[0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15],
     button_type='primary',
     button_style="outline",
     height=60,
@@ -289,10 +289,10 @@ ir_group  = pn.widgets.RadioButtonGroup(
 column = pn.Column(pn.Row(pn.HSpacer(),pn.pane.Markdown("# Aktuelle Seriennummer:"), pn.HSpacer()),
                     pn.Row(pn.HSpacer(), serialCard, pn.HSpacer()),
                     pn.Spacer(height=60),
-                    pn.Row(pn.HSpacer(),pn.pane.Markdown("# Außenring Gruppe:"), pn.HSpacer()),
-                    pn.Row(pn.HSpacer(),ar_group, pn.HSpacer()),
                     pn.Row(pn.HSpacer(),pn.pane.Markdown("# Innenring Gruppe:"), pn.HSpacer()),
                     pn.Row(pn.HSpacer(),ir_group, pn.HSpacer()),
+                    pn.Row(pn.HSpacer(),pn.pane.Markdown("# Außenring Gruppe:"), pn.HSpacer()),
+                    pn.Row(pn.HSpacer(),ar_group, pn.HSpacer()),
                     pn.Spacer(height=60),
                     pn.pane.Markdown("### Log"),
                     log,
