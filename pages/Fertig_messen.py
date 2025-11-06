@@ -4,6 +4,8 @@ import sys
 import panel as pn
 import random
 import asyncio
+from pathlib import Path
+import re
 from os.path import isfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -22,6 +24,7 @@ from db.models import BearingData
 
 TITLE = "Fertig messen"
 
+pattern = re.compile(r'_(\d+)\.csv$')
 
 # Load config file
 configPath = "config.json"
@@ -61,37 +64,50 @@ def write_to_DB(bearing_id, measurement):
     except NoResultFound:
         session.rollback()
         pn.state.notifications.error(f'DMC nicht in der Datenbank {bearing_id}', duration=0)
+        return False
     except DataError:
         session.rollback()
         pn.state.notifications.error(f'Messwert ist keine Zahl', duration=2000)
+        return False
     else:
         session.commit()
     session.close()
-    return
+    return True
 
 
-    async def watch_for_file(filepath):
-        for changes in watch(os.path.dirname(filepath), recursive=False):
-            for change_type, path in changes:
-                print(f'change_type: {change_type}, path: {path}', flush=True)
-                if (change_type == 1 or change_type== 2) and path.endswith(os.path.basename(filepath)):
-                    await getMeasurement(filepath)
-                    return
+def findLatestFile(path):
+    max_file_number = -1
+    maxfile = None
+    directory = Path(path)
+
+    for file in directory.glob("*.csv"):
+        match = pattern.search(file.name)
+        if match:
+            number = int (match.group(1))
+            if number > max_file_number:
+                max_file_number = number
+                maxfile = file
+    return maxfile
 
 
 async def getMeasurement():
     #watch for test.csv file and read the first line after it is created
-    if os.path.exists(config["FERTIGMESSEN_CSV"]):        
-        with open(config["FERTIGMESSEN_CSV"], "r") as f:
-            line = f.readlines()[-1]
-            print(line, flush=True)
-            value = line.split(";")[13]
-            value = value.replace(",", ".")
-            value =  float(value)
-            currentMeasurement.rx.value = value
-        os.remove(config["FERTIGMESSEN_CSV"])
+    csv_path = findLatestFile(config["FERTIGMESSEN_CSV"])
+    if csv_path:
+        if os.path.exists(csv_path):        
+            with open(csv_path, "r") as f:
+                line = f.readlines()[-1]
+                print(line, flush=True)
+                value = line.split(";")[13]
+                value = value.replace(",", ".")
+                value =  float(value)
+                currentMeasurement.rx.value = value
+            os.remove(csv_path)
+        else:
+            pn.state.notifications.error(f'{csv_path} konnte nicht gelesen werden', duration=2000)    
     else:
-        pn.state.notifications.error(f'{config["FERTIGMESSEN_CSV"]} nicht gefunden', duration=2000)
+        pn.state.notifications.error(f'Keine CSV im Verzeichnis', duration=2000)
+    return
 
 
 async def process(event):
@@ -113,8 +129,9 @@ async def process(event):
 
 def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
-    write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
-    pn.state.notifications.success(f'Erfolgreich gespeichert', duration=3000)
+    result = write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
+    if result:
+        pn.state.notifications.success(f'Erfolgreich gespeichert', duration=3000)
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
     b_Reload.disabled = True
