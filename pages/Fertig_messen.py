@@ -2,7 +2,7 @@ import json
 import os
 import sys
 import panel as pn
-import random
+from io import BytesIO
 import asyncio
 from pathlib import Path
 import re
@@ -10,7 +10,33 @@ from os.path import isfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound, DataError
-from watchfiles import awatch, watch
+from smb import smb_structs
+from smb.SMBConnection import SMBConnection
+
+class SMBManager:
+    def __init__(self):
+        self.conn = None
+
+    def connect(self):
+        if self.conn is None:
+            self.conn = create_connection()
+        return self.conn
+
+    def get(self):
+        try:
+            self.conn.echo(b"ping")
+        except Exception:
+            self.conn = create_connection()
+        return self.conn
+
+    def close(self):
+        if self.conn:
+            self.conn.close()
+            self.conn = None
+
+smb_manager = SMBManager()
+pn.state.cache["smb"] = smb_manager
+
 
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -20,17 +46,18 @@ if main_project_dir not in sys.path:
 from components import FocusedInput
 from db.models import BearingData
 
-
+# Force SMB1 for this legacy server
+smb_structs.SUPPORT_SMB2 = False
 
 TITLE = "Fertig messen"
 
-pattern = re.compile(r'_(\d+)\.csv$')
+pattern = re.compile(r'_(\d+)\.csv$', re.IGNORECASE)
 
 # Load config file
 configPath = "config.json"
 if not isfile(configPath):
     configPath = "default_config.json"
-    
+                                                                                                                                                                                                                                                                                                                                                            
 with open(configPath, "r") as f:
     config = json.load(f)
 
@@ -52,6 +79,23 @@ linklist = pn.pane.Markdown(
     sizing_mode="stretch_width",
 )
 
+def create_connection():
+    conn = SMBConnection(
+        config["SMBUSER"],
+        config["SMBPWD"],
+        "ubuntu2404",
+        config["SMBSERVER_IP"],
+        use_ntlm_v2=False,   # often needed for older servers
+        is_direct_tcp=True   # port 445
+    )
+    connected = conn.connect(config["SMBSERVER_IP"], 445, timeout=10)
+    print("connected to SMB:", connected)
+    return conn
+
+def cleanup_session(session_context):
+    pn.state.cache["smb"].close()
+
+pn.state.on_session_destroyed(cleanup_session)
 
 
 def write_to_DB(bearing_id, measurement):
@@ -75,39 +119,74 @@ def write_to_DB(bearing_id, measurement):
     return True
 
 
-def findLatestFile(path):
-    max_file_number = -1
-    maxfile = None
-    directory = Path(path)
 
-    for file in directory.glob("*.csv"):
-        match = pattern.search(file.name)
+def find_latest_remote_file(conn, share_name, remote_dir):
+    max_file_number = -1
+    max_file = None
+
+    for entry in conn.listPath(share_name, remote_dir):
+        if entry.isDirectory:
+            continue
+
+        name = entry.filename.rstrip('\x00').strip()
+        match = pattern.search(name)
+        print(repr(name), match.group(1) if match else None)
+
         if match:
-            number = int (match.group(1))
+            number = int(match.group(1))
             if number > max_file_number:
                 max_file_number = number
-                maxfile = file
-    return maxfile
+                max_file = name
 
+    if max_file is None:
+        return None
+
+    return f"{remote_dir.rstrip('/')}/{max_file}"
 
 async def getMeasurement():
-    #watch for test.csv file and read the first line after it is created
-    csv_path = findLatestFile(config["FERTIGMESSEN_CSV"])
-    if csv_path:
-        if os.path.exists(csv_path):        
-            with open(csv_path, "r") as f:
-                line = f.readlines()[-1]
-                print(line, flush=True)
-                value = line.split(";")[13]
-                value = value.replace(",", ".")
-                value =  float(value)
-                currentMeasurement.rx.value = value
-            os.remove(csv_path)
-        else:
-            pn.state.notifications.error(f'{csv_path} konnte nicht gelesen werden', duration=2000)    
-    else:
-        pn.state.notifications.error(f'Keine CSV im Verzeichnis', duration=2000)
-    return
+    conn = pn.state.cache["smb"].get()
+    csv_path = find_latest_remote_file(conn, config["SMBSHARENAME"], "/ExcelAusgabe")
+
+    if csv_path is None:
+        pn.state.notifications.error("Keine CSV im Verzeichnis", duration=2000)
+        return
+
+    try:
+        buffer = BytesIO()
+        conn.retrieveFile(config["SMBSHARENAME"], csv_path, buffer)
+        buffer.seek(0)
+
+        text = buffer.read().decode("utf-8", errors="replace")
+        lines = [line for line in text.splitlines() if line.strip()]
+
+        if not lines:
+            pn.state.notifications.error(f"{csv_path} ist leer", duration=2000)
+            return
+
+        last_line = lines[-1]
+        print(last_line, flush=True)
+
+        columns = last_line.split(";")
+        value = float(columns[13].replace(",", "."))
+        currentMeasurement.rx.value = value
+
+        #conn.deleteFiles(config["SMBSHARENAME"], csv_path)
+
+    except IndexError:
+        pn.state.notifications.error(
+            f"{csv_path} hat nicht genug Spalten",
+            duration=2000
+        )
+    except ValueError as e:
+        pn.state.notifications.error(
+            f"Wert in {csv_path} konnte nicht in float umgewandelt werden: {e}",
+            duration=3000
+        )
+    except Exception as e:
+        pn.state.notifications.error(
+            f"{csv_path} konnte nicht gelesen werden: {e}",
+            duration=3000
+        )
 
 
 async def process(event):
