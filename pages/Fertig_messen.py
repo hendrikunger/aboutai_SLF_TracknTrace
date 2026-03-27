@@ -6,6 +6,7 @@ from io import BytesIO
 import asyncio
 from pathlib import Path
 import re
+import subprocess
 from os.path import isfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -38,6 +39,24 @@ smb_manager = SMBManager()
 pn.state.cache["smb"] = smb_manager
 
 
+def delete_remote_file_smbclient(server, share, username, password, remote_path):
+    remote_path = remote_path.lstrip("/")
+
+    cmd = [
+        "smbclient",
+        f"//{server}/{share}",
+        "-U", f"{username}%{password}",
+        "--option=client min protocol=NT1",
+        "-c", f'del "{remote_path}"'
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"smbclient delete failed\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
+
+
 main_project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 if main_project_dir not in sys.path:
@@ -52,6 +71,7 @@ smb_structs.SUPPORT_SMB2 = False
 TITLE = "Fertig messen"
 
 pattern = re.compile(r'_(\d+)\.csv$', re.IGNORECASE)
+pn.state.cache["currentPath"]  = None
 
 # Load config file
 configPath = "config.json"
@@ -120,43 +140,49 @@ def write_to_DB(bearing_id, measurement):
 
 
 
+def clean_smb_name(name: str) -> str:
+    return name.rstrip("\x00").strip()
+
 def find_latest_remote_file(conn, share_name, remote_dir):
     max_file_number = -1
-    max_file = None
+    best_name = None
 
     for entry in conn.listPath(share_name, remote_dir):
         if entry.isDirectory:
             continue
 
-        name = entry.filename.rstrip('\x00').strip()
-        match = pattern.search(name)
-        print(repr(name), match.group(1) if match else None)
+        clean_name = clean_smb_name(entry.filename)
+        match = pattern.search(clean_name)
 
         if match:
             number = int(match.group(1))
             if number > max_file_number:
                 max_file_number = number
-                max_file = name
+                best_name = clean_name
 
-    if max_file is None:
+    if best_name is None:
         return None
 
-    return f"{remote_dir.rstrip('/')}/{max_file}"
+    return {
+        "name": best_name,
+        "path": f"{remote_dir}/{best_name}"
+    }
 
 async def getMeasurement():
     conn = pn.state.cache["smb"].get()
-    csv_path = find_latest_remote_file(conn, config["SMBSHARENAME"], "/ExcelAusgabe")
+    file_info  = find_latest_remote_file(conn, config["SMBSHARENAME"], "/ExcelAusgabe")
 
-    if csv_path is None:
+    if file_info is None:
         pn.state.notifications.error("Keine CSV im Verzeichnis", duration=2000)
         return
+    csv_path = file_info["path"]
 
     try:
         buffer = BytesIO()
         conn.retrieveFile(config["SMBSHARENAME"], csv_path, buffer)
         buffer.seek(0)
 
-        text = buffer.read().decode("utf-8", errors="replace")
+        text = buffer.read().decode("cp1252", errors="replace")
         lines = [line for line in text.splitlines() if line.strip()]
 
         if not lines:
@@ -166,11 +192,11 @@ async def getMeasurement():
         last_line = lines[-1]
         print(last_line, flush=True)
 
+
         columns = last_line.split(";")
         value = float(columns[13].replace(",", "."))
         currentMeasurement.rx.value = value
-
-        #conn.deleteFiles(config["SMBSHARENAME"], csv_path)
+        pn.state.cache["currentPath"] = csv_path
 
     except IndexError:
         pn.state.notifications.error(
@@ -183,11 +209,14 @@ async def getMeasurement():
             duration=3000
         )
     except Exception as e:
+        print(e)
         pn.state.notifications.error(
             f"{csv_path} konnte nicht gelesen werden: {e}",
             duration=3000
         )
 
+        
+        
 
 async def process(event):
     input_value = str(ti_Barcode.value)
@@ -208,9 +237,23 @@ async def process(event):
 
 def button_save_function(event):
     running_indicator.value = running_indicator.visible = True
+
+    
     result = write_to_DB(ti_Barcode.value, currentMeasurement.rx.value)
     if result:
         pn.state.notifications.success(f'Erfolgreich gespeichert', duration=3000)
+        try:
+            #Use subprocess because pysmb delete does not work with this server
+            delete_remote_file_smbclient(
+            server=config["SMBSERVER_IP"],
+            share=config["SMBSHARENAME"],
+            username=config["SMBUSER"],
+            password=config["SMBPWD"],
+            remote_path=pn.state.cache["currentPath"],
+            )
+        except Exception as e:
+            print(e)
+            
     running_indicator.value = running_indicator.visible = False
     b_Save.disabled = True
     b_Reload.disabled = True
